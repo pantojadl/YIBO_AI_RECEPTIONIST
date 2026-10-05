@@ -8,6 +8,26 @@ import { buildRealtimeSessionUpdate } from "../../src/modules/conversation/index
 const supportedModels = ["gpt-realtime-2.1", "gpt-realtime-2.1-mini"] as const;
 
 describe("buildRealtimeSessionUpdate", () => {
+  it.each(["phone", "voice_lab"] as const)("accepts call completion in a serial %s session", channel => {
+    const value = agent("gpt-realtime-2.1");
+    value.channel = channel;
+    value.parallelToolCalls = false;
+    value.tools.push({ name: "end_call", description: "End after farewell", inputSchema: { type: "object", additionalProperties: false, properties: {} } });
+    const payload = buildRealtimeSessionUpdate(value, "audio");
+    if (payload.session.type !== "realtime") throw new Error("Expected an audio Realtime session");
+    expect(payload.session.tools).toContainEqual(expect.objectContaining({ name: "end_call" }));
+    expect(payload.session.parallel_tool_calls).toBe(false);
+  });
+
+  it.each(["no-channel", "parallel", "disabled"])("keeps call completion blocked for %s", mode => {
+    const value = agent("gpt-realtime-2.1");
+    value.channel = "voice_lab";
+    value.parallelToolCalls = mode === "parallel";
+    if (mode === "no-channel") delete value.channel;
+    if (mode === "disabled") value.toolChoice = "none";
+    value.tools = [{ name: "end_call", description: "End after farewell", inputSchema: { type: "object" } }];
+    expect(() => buildRealtimeSessionUpdate(value, "audio")).toThrow("Call completion requires");
+  });
   it.each(supportedModels)("matches the validated audio payload contract for %s", (model) => {
     expect(buildRealtimeSessionUpdate(agent(model), "audio")).toEqual(expectedPayload(model));
   });

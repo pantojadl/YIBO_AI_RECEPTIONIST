@@ -1,0 +1,12 @@
+# TEMPLATE ONLY. Enable only after a successful manual off-host backup and restore.
+[Unit]
+Description=YIBO hourly regional backup
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=yibo-backup.service
+
+[Install]
+WantedBy=timers.target

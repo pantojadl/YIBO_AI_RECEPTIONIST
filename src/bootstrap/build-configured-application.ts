@@ -1,3 +1,4 @@
+import { SqliteAppointmentConcurrencyGuard } from "../infrastructure/database/sqlite-appointment-concurrency-guard.js";
 import { buildAsteriskIntegration } from "./asterisk-integration.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -109,6 +110,7 @@ export async function buildConfiguredApplication(options: BuildApplicationOption
     callRepository,
     customerRepository,
     appointmentRepository,
+    appointmentConcurrencyGuard: options.appointmentConcurrencyGuard ?? new SqliteAppointmentConcurrencyGuard(database, tenant.region),
     appointmentNotifications: notifications,
     providerReadiness: { email: Boolean(environment.RESEND_API_KEY?.trim() && environment.YIBO_EMAIL_FROM?.trim()),
       telephony: Boolean(asterisk), calendar: Boolean(google), realtime: applicationRuntimeConfigured(environment) },

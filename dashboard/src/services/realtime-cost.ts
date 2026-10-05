@@ -30,6 +30,28 @@ export const emptyRealtimeSessionUsage = (): RealtimeSessionUsage => ({
   toolCalls: 0,
 });
 
+export interface RealtimeCostState {
+  usage: RealtimeSessionUsage;
+  startedAt?: number;
+  endedAt?: number;
+}
+
+export const emptyRealtimeCostState = (): RealtimeCostState => ({ usage: emptyRealtimeSessionUsage() });
+
+/** Follow the shared Voice Lab lifecycle; each fresh test owns its own estimate. */
+export function observeRealtimeCostEvent(state: RealtimeCostState, event: Record<string, unknown>, now: number): RealtimeCostState {
+  const name = event.event ?? event.type;
+  if (name === "test.started") return emptyRealtimeCostState();
+  if (name === "conversation.opened" && state.startedAt === undefined) return { ...state, startedAt: now };
+  if (name === "usage" && state.startedAt !== undefined && state.endedAt === undefined) {
+    return { ...state, usage: addRealtimeUsage(state.usage, event) };
+  }
+  if (["test.completed", "conversation.closed"].includes(String(name)) && state.startedAt !== undefined && state.endedAt === undefined) {
+    return { ...state, endedAt: now };
+  }
+  return state;
+}
+
 export function addRealtimeUsage(
   current: RealtimeSessionUsage,
   increment: Record<string, unknown>,

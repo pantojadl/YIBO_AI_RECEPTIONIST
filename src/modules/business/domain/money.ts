@@ -1,3 +1,7 @@
+export const DISPLAY_CURRENCIES = ["USD", "MXN", "EUR"] as const;
+export type DisplayCurrency = typeof DISPLAY_CURRENCIES[number];
+export const DEFAULT_DISPLAY_CURRENCY: DisplayCurrency = "USD";
+
 export interface Money {
   amountMinor: number;
   currency: string;

@@ -1,5 +1,11 @@
 # Appointment administration — UI-008
 
+**Current front-desk UI:** the Product/UX
+[Appointments Calendar checkpoint](PRODUCT_UX_APPOINTMENTS_CALENDAR.md) replaces
+ID-based navigation with day/week/agenda views and inline manual booking. It reuses
+the editor and mutation contracts below and adds a bounded all-customer calendar
+read. The following UI-008 implementation/validation record is historical.
+
 Operators and tenant administrators use **Appointments** to select a location,
 list a customer's upcoming confirmed appointments by customer ID, or look up an
 appointment by ID. The existing customer creation flow supplies the current
@@ -29,15 +35,18 @@ date searches use the selected location's time zone rather than the browser's zo
 
 New thin HTTP adapters expose:
 
-- `GET /api/appointment-locations` — safe location names/time zones/notice policies.
+- `GET /api/appointment-locations` — safe location names/time zones/notice policies;
+  Checkpoint C also adds offered services, eligible professional choices and the
+  effective availability-suggestion policy.
 - `GET /api/locations/:locationId/appointments?customerId=...` — existing upcoming list.
 - `GET /api/locations/:locationId/appointments/:appointmentId` — scoped lookup.
 - `POST /api/locations/:locationId/appointments/:appointmentId/cancel` — empty JSON body.
 - `POST /api/locations/:locationId/appointments/:appointmentId/reschedule` — `startAt` only.
 
 The existing availability endpoint accepts an optional location ID; omission still
-uses `default`, preserving the existing booking UI. Existing creation and legacy
-lookup endpoints are unchanged. New endpoints reuse the operator role guard,
+uses `default`. Checkpoint C also adds optional `locationId` to appointment creation;
+omission preserves default-location booking. Newly created appointments open at
+their booked location. The legacy lookup endpoint is unchanged. Endpoints reuse the operator role guard,
 authenticated tenant, same-origin protection and redacted mutation auditing.
 Location IDs are admin selections within the authenticated tenant; they do not
 change AI/telephone trusted-context rules. Extra mutation fields and tenant

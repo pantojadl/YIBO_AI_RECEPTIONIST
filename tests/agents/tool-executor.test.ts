@@ -506,7 +506,7 @@ describe("ToolExecutorImpl", () => {
     });
 
     expect(rescheduleAppointment).toHaveBeenCalledWith({
-      tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1", startAt: "2026-08-11T21:00:00.000Z",
+      tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1", startAt: "2026-08-11T21:00:00.000Z", expectedVersion: 1,
     });
     expect(result).toEqual({
       toolCallId: "tool-reschedule",

@@ -36,6 +36,20 @@ describe("clinic timezone datetime normalization", () => {
       .toBe("2026-11-01T22:00:00.000Z");
   });
 
+  it("keeps morning appointments on the spring-forward and fall-back days", () => {
+    const spring = normalizeDateTimeForTimezone("2026-03-08T07:00", "America/Chicago");
+    expect(spring?.toISOString()).toBe("2026-03-08T12:00:00.000Z");
+    expect(dateTimeInTimezone(spring!, "America/Chicago").dateTime).toBe("2026-03-08T07:00:00-05:00");
+
+    const autumn = normalizeDateTimeForTimezone("2026-11-01T02:00", "America/Chicago");
+    expect(autumn?.toISOString()).toBe("2026-11-01T08:00:00.000Z");
+    expect(dateTimeInTimezone(autumn!, "America/Chicago").dateTime).toBe("2026-11-01T02:00:00-06:00");
+  });
+
+  it("rejects the local hour that daylight saving skips", () => {
+    expect(normalizeDateTimeForTimezone("2026-03-08T02:30", "America/Chicago")).toBeNull();
+  });
+
   it.each([
     ["daylight saving time", "2026-06-15T15:00", "2026-06-15T20:00:00.000Z", "2026-06-15T15:00:00-05:00"],
     ["standard time", "2026-12-15T15:00", "2026-12-15T21:00:00.000Z", "2026-12-15T15:00:00-06:00"],

@@ -10,6 +10,15 @@ successful live phone call. ACCEPT-001 and DEPLOY-001 remain open below.
 This final audit changes documentation only. No service, database, live calendar,
 original phone checkout or main branch was changed.
 
+## Business-test follow-up — 2026-09-22
+
+A focused re-audit found and fixed a route-deactivation bypass in the existing guard.
+Latest checkpoint: 482 passed, one optional live skip; both typechecks/build passed.
+Software-roadmap closure does not mean the current environment is ready for a real
+call: Google authorization and a dedicated test route remain blocked. Concurrent
+appointment edits and secretary ID-based lookup now have explicit follow-up owners.
+See [business-test readiness](BUSINESS_TEST_READINESS.md) for scope and manual checks.
+
 ## Closure rule and result
 
 The handoff requires no contradictory current documentation, unowned open tasks,

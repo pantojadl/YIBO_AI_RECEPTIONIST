@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isCallEnded, resetCallLiveness } from "../../src/modules/calls/index.js";
 import { AgentDefinitionService, InMemoryAgentConfigurationSource, type AgentToolName, type ToolExecutor } from "../../src/modules/agents/index.js";
 import { BusinessDirectoryService, InMemoryBusinessRepository, type BusinessProfile } from "../../src/modules/business/index.js";
 import { CallOrchestratorService, InMemoryCallRepository, type CallCustomerDirectory, type CallTelephonyGateway } from "../../src/modules/calls/index.js";
@@ -55,6 +56,8 @@ const createOrchestrator = (overrides: { agentOk?: boolean; customerOk?: boolean
 };
 
 describe("CallOrchestratorService", () => {
+  afterEach(() => resetCallLiveness());
+
   it("starts a conversation through the public agent, voice and conversation APIs", async () => {
     const system = createOrchestrator();
 
@@ -99,6 +102,7 @@ describe("CallOrchestratorService", () => {
     expect(system.runtime.latestSession.closeCount).toBe(1);
     expect(system.transportClose).toHaveBeenCalledTimes(1);
     expect(system.repository.stateHistory.at(-1)).toEqual({ callId: incoming.callId, state: "COMPLETED" });
+    expect(isCallEnded(incoming.callId)).toBe(true);
   });
 
   it("closes media after a transferred call without replacing its terminal state", async () => {

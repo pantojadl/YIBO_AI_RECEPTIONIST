@@ -98,18 +98,13 @@ export class GoogleOAuthService {
     const token = await this.accessToken(tenantId);
     if (!token) return "disconnected";
     try {
-      const timeMin = new Date();
-      const timeMax = new Date(timeMin.valueOf() + 60_000);
-      const response = await this.fetcher("https://www.googleapis.com/calendar/v3/freeBusy", {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          timeMin: timeMin.toISOString(),
-          timeMax: timeMax.toISOString(),
-          timeZone: "UTC",
-          items: [{ id: calendarId }],
-        }),
-      });
+      // Use the calendar.events scope we request; calendar metadata needs a
+      // different scope. Return only the collection kind, never event details.
+      const response = await this.fetcher(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?maxResults=1&fields=kind`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      if (response.ok) return "accessible";
       if (response.status === 403) {
         const payload = await response.json().catch(() => null) as {
           error?: { errors?: Array<{ reason?: string }> };
@@ -120,16 +115,7 @@ export class GoogleOAuthService {
       }
       if (response.status === 404) return "not_found";
       if (response.status === 401) return "disconnected";
-      if (!response.ok) return "unavailable";
-      const payload = await response.json() as {
-        calendars?: Record<string, { errors?: Array<{ reason?: string }> }>;
-      };
-      const calendar = payload.calendars?.[calendarId] ?? Object.values(payload.calendars ?? {})[0];
-      if (!calendar) return "unavailable";
-      const reasons = calendar.errors?.map(({ reason }) => reason) ?? [];
-      if (reasons.includes("notFound")) return "not_found";
-      if (reasons.includes("forbidden")) return "forbidden";
-      return reasons.length === 0 ? "accessible" : "unavailable";
+      return "unavailable";
     } catch {
       return "unavailable";
     }

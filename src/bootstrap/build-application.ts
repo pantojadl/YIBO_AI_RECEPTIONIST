@@ -14,6 +14,7 @@ import {
 import {
   AppointmentServiceImpl,
   InMemoryAppointmentConcurrencyGuard,
+  type AppointmentConcurrencyGuard,
   InMemoryAppointmentRepository,
   type AppointmentService,
   type AppointmentCalendarPort,
@@ -127,7 +128,7 @@ export interface YiboApplication {
   adminAudit: AdminAuditService;
   notifications?: AppointmentNotificationService;
   providerReadiness: { email: boolean; telephony: boolean; calendar: boolean; realtime: boolean };
-  registerCallMedia(callId: string, transport: ConversationTransport): void;
+  registerCallMedia(callId: string, transport: ConversationTransport): () => void;
 }
 
 export interface BuildApplicationOptions {
@@ -138,6 +139,7 @@ export interface BuildApplicationOptions {
   businessRepository?: BusinessRepository;
   customerRepository?: CustomerRepository;
   appointmentRepository?: ApplicationAppointmentRepository;
+  appointmentConcurrencyGuard?: AppointmentConcurrencyGuard;
   clock?: Clock;
   ids?: IdGenerator;
   runtime?: ConversationRuntimePort;
@@ -236,7 +238,7 @@ export function buildApplication(options: BuildApplicationOptions = {}): YiboApp
     business,
     scheduling,
     calendar,
-    new InMemoryAppointmentConcurrencyGuard(),
+    options.appointmentConcurrencyGuard ?? new InMemoryAppointmentConcurrencyGuard(),
     () => ids.generate("appointment"),
     clock,
     options.appointmentNotifications,

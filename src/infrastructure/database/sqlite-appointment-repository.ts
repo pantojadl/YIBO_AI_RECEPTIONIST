@@ -9,6 +9,7 @@ type AppointmentRow = {
   start_at: string; end_at: string; status: Appointment["status"]; idempotency_key: string;
   source: Appointment["source"]; source_call_id: string | null; external_calendar_event_id: string | null;
   outcome_status: "COMPLETED" | "NO_SHOW" | null;
+  version: number;
 };
 
 export class SqliteAppointmentRepository implements AppointmentRepository, ConfirmedAppointmentReader {
@@ -32,6 +33,13 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
       ORDER BY start_at`
     ).all(this.region, query.tenantId, query.locationId, query.customerId, query.startsAtOrAfter)
       .map((row) => this.row(row as AppointmentRow)!);
+  }
+
+  async findInRange(query: { tenantId: string; locationId: string; rangeStart: string; rangeEnd: string }): Promise<Appointment[]> {
+    return this.database.prepare(`${SELECT_APPOINTMENT}
+      AND location_id = ? AND start_at < ? AND end_at > ? ORDER BY start_at, id`)
+      .all(this.region, query.tenantId, query.locationId, query.rangeEnd, query.rangeStart)
+      .map(row => this.row(row as AppointmentRow)!);
   }
 
   async findByRange(query: { tenantId: string; locationId: string; rangeStart: string; rangeEnd: string;
@@ -93,8 +101,8 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
       INSERT INTO appointments(
         region_id, tenant_id, location_id, id, customer_id, service_id, service_name_snapshot,
         price_amount_minor, price_currency, employee_id, start_at, end_at, status, idempotency_key,
-        source, source_call_id, external_calendar_event_id, outcome_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source, source_call_id, external_calendar_event_id, outcome_status, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(region_id, tenant_id, id) DO UPDATE SET
         location_id = excluded.location_id, customer_id = excluded.customer_id, service_id = excluded.service_id,
         service_name_snapshot = excluded.service_name_snapshot, price_amount_minor = excluded.price_amount_minor,
@@ -102,19 +110,19 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
         start_at = excluded.start_at, end_at = excluded.end_at,
         status = excluded.status, idempotency_key = excluded.idempotency_key, source = excluded.source,
         source_call_id = excluded.source_call_id, external_calendar_event_id = excluded.external_calendar_event_id,
-        outcome_status = excluded.outcome_status
+        outcome_status = excluded.outcome_status, version = excluded.version
     `).run(
       this.region, value.tenantId, value.locationId, value.id, value.customerId, value.serviceId,
       value.serviceNameSnapshot, value.priceAmountMinor, value.priceCurrency, value.employeeId,
       value.startAt, value.endAt, value.status, value.idempotencyKey, value.source,
-      value.sourceCallId ?? null, value.externalCalendarEventId ?? null, value.outcomeStatus ?? null,
+      value.sourceCallId ?? null, value.externalCalendarEventId ?? null, value.outcomeStatus ?? null, value.version ?? 1,
     );
   }
 
   async findConfirmedIntervals(query: ConfirmedAppointmentQuery): Promise<OccupiedInterval[]> {
     return this.database.prepare(`
       SELECT start_at, end_at FROM appointments
-      WHERE region_id = ? AND tenant_id = ? AND location_id = ? AND employee_id = ? AND status = 'CONFIRMED'
+      WHERE region_id = ? AND tenant_id = ? AND location_id = ? AND employee_id = ? AND status IN ('CONFIRMED', 'PENDING_CONFIRMATION')
         AND start_at < ? AND ? < end_at
       ORDER BY start_at
     `).all(this.region, query.tenantId, query.locationId, query.employeeId, query.rangeEnd, query.rangeStart)
@@ -126,7 +134,7 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
 
   async findConfirmedLocationIntervals(query: { tenantId: string; locationId: string; rangeStart: string; rangeEnd: string }) {
     return this.database.prepare(`SELECT start_at, end_at FROM appointments
-      WHERE region_id = ? AND tenant_id = ? AND location_id = ? AND status = 'CONFIRMED'
+      WHERE region_id = ? AND tenant_id = ? AND location_id = ? AND status IN ('CONFIRMED', 'PENDING_CONFIRMATION')
         AND start_at < ? AND ? < end_at ORDER BY start_at`
     ).all(this.region, query.tenantId, query.locationId, query.rangeEnd, query.rangeStart)
       .map((row) => {
@@ -138,7 +146,7 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
   private row(value: AppointmentRow | undefined): Appointment | null {
     if (!value) return null;
     return {
-      id: value.id, tenantId: value.tenant_id, locationId: value.location_id, customerId: value.customer_id,
+      version: value.version, id: value.id, tenantId: value.tenant_id, locationId: value.location_id, customerId: value.customer_id,
       serviceId: value.service_id, employeeId: value.employee_id, startAt: value.start_at,
       serviceNameSnapshot: value.service_name_snapshot, priceAmountMinor: value.price_amount_minor,
       priceCurrency: value.price_currency,
@@ -154,6 +162,6 @@ export class SqliteAppointmentRepository implements AppointmentRepository, Confi
 const SELECT_APPOINTMENT = `
   SELECT id, tenant_id, location_id, customer_id, service_id, service_name_snapshot,
     price_amount_minor, price_currency, employee_id, start_at, end_at, status,
-    idempotency_key, source, source_call_id, external_calendar_event_id, outcome_status
+    idempotency_key, source, source_call_id, external_calendar_event_id, outcome_status, version
   FROM appointments WHERE region_id = ? AND tenant_id = ?
 `;

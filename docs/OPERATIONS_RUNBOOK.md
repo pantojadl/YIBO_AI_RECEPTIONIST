@@ -47,8 +47,8 @@ production process supervisor or a deployment command.
   See [UI-006](CATALOG_ADMINISTRATION.md).
 - **Calendars:** connect the tenant's Google account; configure location default or
   professional override and validate access. Access validation does not prove event
-  write permission; it uses Google FreeBusy with the same least-privilege scope as
-  availability checks. Changes to effective routes used by non-cancelled bookings are
+  write permission; it probes events using the configured events scope. Availability
+  continues to use FreeBusy. Changes to effective routes used by non-cancelled bookings are
   blocked, including pending/failed bookings. No events are migrated.
   See [UI-007](CALENDAR_ADMINISTRATION.md).
 - **Agent:** edit persisted settings, save, then start a new conversation. Voice Lab
@@ -64,6 +64,10 @@ production process supervisor or a deployment command.
 - **Conflicts:** copy the intended draft before choosing discard/reload and reapply
   against the current version. Never bypass `If-Match` or force-save stale data.
   See [UI-009](OPTIMISTIC_EDITING.md). Session expiry can discard in-memory drafts.
+  Appointment conflicts also require a fresh review; never automatically retry a
+  cancellation/reschedule. A persistent busy error after process death needs the
+  [exact-claim recovery procedure](APPOINTMENT_EDIT_PROTECTION.md), not a blanket lock
+  reset. All API/voice writers sharing a database must upgrade together for migration 11.
 
 `tenant_admin` controls configuration; `operator` performs permitted operational work.
 Neither role supplies another tenant/region in request bodies. Do not edit raw SQLite

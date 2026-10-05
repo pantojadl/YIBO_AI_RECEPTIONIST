@@ -25,6 +25,6 @@ describe("SQLite location context migration", () => {
     expect(result.freshColumns).toMatchObject({
       appointments: expect.arrayContaining(["service_name_snapshot", "price_amount_minor", "price_currency"]),
     });
-    expect(result.versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((version) => ({ version })));
+    expect(result.versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((version) => ({ version })));
   });
 });

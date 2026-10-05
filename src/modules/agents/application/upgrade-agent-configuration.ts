@@ -197,6 +197,8 @@ function normalizeBehavior(value: unknown, locale: string): AgentBehaviorConfigu
   const silence = record(input.silence);
   const slotOffering = record(input.slotOffering);
   return {
+    allowPriceDisclosure: booleanOr(input.allowPriceDisclosure, true, "behavior.allowPriceDisclosure"),
+    phoneReadback: enumOrDefault(input.phoneReadback, ["natural_grouped", "digit_by_digit"] as const, "natural_grouped", "behavior.phoneReadback"),
     greeting: greetingMode === "automatic"
       ? { mode: "automatic", message: stringOr(greeting.message, "") }
       : { mode: "wait_for_caller" },

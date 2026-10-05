@@ -6,6 +6,7 @@ import { BusinessDirectoryService, InMemoryBusinessRepository } from "../../src/
 import { GoogleCalendarAdapter, BusinessCalendarAssignmentResolver, type GoogleOAuthService } from "../../src/modules/integrations/index.js";
 import { ScriptedConversationRuntime, type ScriptedConversationRuntimeSession } from "../../src/modules/conversation/index.js";
 import type { AgentToolName } from "../../src/modules/agents/index.js";
+import { resetCallLiveness } from "../../src/modules/calls/index.js";
 import { AsteriskTelephonyGateway, AsteriskRtpVoiceMediaGateway, type AsteriskMediaClient, type AsteriskEvent } from "../../src/modules/telephony/index.js";
 
 class Ari implements AsteriskMediaClient {
@@ -26,6 +27,9 @@ type Event = { id: string; etag: string; start: { dateTime: string }; end: { dat
 export const slot = "2026-09-21T15:30:00.000Z";
 export const booking = { service: "Consultation", employeeId: "employee-us-1", startAt: slot };
 export function phoneOperations(portStart = 50300) {
+  // Each fixture numbers calls from operation-call-1. A prior hangup must not
+  // block the next fixture's live call.
+  resetCallLiveness();
   const profile = structuredClone(DEVELOPMENT_US_BUSINESS);
   profile.locations[0]!.defaultCalendarId = "operations@example.test";
   profile.locations[0]!.transferDestination = { type: "EXTENSION", value: "204" };

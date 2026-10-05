@@ -45,6 +45,10 @@ export function createCatalogEditor(client = api) {
       return false;
     } finally { state.busy = false; }
   }
+  const saveDisplayCurrency = (currency: "USD" | "MXN" | "EUR") => mutate(async (document) => {
+    document.configuration.displayCurrency = currency;
+    Object.assign(document, await client.updateBusinessConfiguration(document.configuration, document.version));
+  });
   const saveService = (service: TenantServiceDefinition, isNew: boolean) => mutate(async (document) => {
     const { id, ...fields } = copyCatalogValue(service);
     const result = isNew ? await client.createService({ id, ...fields }, document.version) : await client.updateService(id, fields, document.version);
@@ -77,5 +81,5 @@ export function createCatalogEditor(client = api) {
     document.version = result.version;
     location.professionals = existing ? location.professionals.map(item => item.professionalId === professionalId ? result.assignment : item) : [...location.professionals, result.assignment];
   });
-  return { state, load, saveService, saveProfessional, saveOffering, saveAssignment };
+  return { state, load, saveDisplayCurrency, saveService, saveProfessional, saveOffering, saveAssignment };
 }

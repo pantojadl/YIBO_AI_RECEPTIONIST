@@ -12,6 +12,7 @@ import {
 } from "../services/api";
 import { phoneTurnDetectionModes, validateAgentCapabilityFields } from "../services/agent-capability-controls";
 import { prioritizeCollectionField, setConfirmationRequired, setToolEnabled } from "../services/agent-policy-controls";
+import { appointmentRules } from "../services/business-agent-controls";
 
 defineProps<{ locale: "es-MX" | "en-US" }>();
 const emit = defineEmits<{ preview: [] }>();
@@ -23,7 +24,7 @@ const steps: Array<{ id: Step; number: string; label: string }> = [
   { id: "identity", number: "01", label: "Identity" },
   { id: "conversation", number: "02", label: "Turn & audio" },
   { id: "silence", number: "03", label: "Silence" },
-  { id: "abilities", number: "04", label: "Tools" },
+  { id: "abilities", number: "04", label: "Business rules" },
   { id: "confirmations", number: "05", label: "Confirm" },
   { id: "limits", number: "06", label: "Limits" },
   { id: "instructions", number: "07", label: "Instructions" },
@@ -75,6 +76,7 @@ const vadPreset = computed<VadPreset>(() => {
 const activeToolCount = computed(() => configuration.value?.enabledTools.length ?? 0);
 const mutableTools = computed(() => availableTools.value.filter(({ kind }) => kind === "mutate"));
 const enabledToolDescriptors = computed(() => availableTools.value.filter(({ name }) => configuration.value?.enabledTools.includes(name)));
+const otherTools = computed(() => availableTools.value.filter(({ name }) => !appointmentRules.some(rule => rule.tool === name)));
 const canAutoTransfer = computed(() => configuration.value?.enabledTools.includes("transfer_to_human")
   && Object.values(configuration.value.toolPolicies.channels).every(({ enabledTools }) => enabledTools.includes("transfer_to_human")));
 
@@ -139,6 +141,11 @@ function toggleTool(name: AgentToolName): void {
   const active = configuration.value.enabledTools.includes(name);
   const kind = availableTools.value.find((tool) => tool.name === name)?.kind ?? "external";
   setToolEnabled(configuration.value, name, kind, !active);
+}
+
+function channelAllows(name: AgentToolName, channel: "phone" | "voice_lab"): boolean {
+  const policy = configuration.value?.toolPolicies.channels[channel];
+  return Boolean(configuration.value?.enabledTools.includes(name) && policy?.toolChoice !== "none" && policy?.enabledTools.includes(name));
 }
 
 function restoreRecommended(): void {
@@ -283,15 +290,21 @@ function errorMessage(caught: unknown): string {
             <label class="prompt-field compact-prompt">Message after silence<input v-model="configuration.behavior.silence.message" maxlength="500"></label>
             <div class="field-grid behavior-fields">
               <label>Slot strategy<select v-model="configuration.behavior.slotOffering.strategy"><option value="earliest_first">Earliest first</option><option value="spread_across_day">Spread across day</option><option value="match_requested_time">Closest to requested time</option></select></label>
+              <label>Phone readback<select v-model="configuration.behavior.phoneReadback"><option value="natural_grouped">Natural / grouped</option><option value="digit_by_digit">Digit by digit</option></select><small>Presentation only; stored phone numbers do not change.</small></label>
               <label>Collection order<small>{{ configuration.behavior.dataCollectionOrder.join(' → ') }}</small><select :value="configuration.behavior.dataCollectionOrder[0]" @change="changeFirstCollectionField"><option value="full_name">Full name first</option><option value="phone_number">Phone first</option><option value="service">Service first</option></select><small>The remaining fields keep their relative order.</small></label>
             </div>
           </section>
 
           <section v-else-if="step === 'abilities'" class="step-panel">
-            <div class="step-heading"><span>04</span><div><h3>Tools by channel</h3><p>The model can request these actions; ToolExecutor still validates and executes them.</p></div></div>
-            <div class="permission-flow"><span>Model<small>requests</small></span><b>→</b><span class="gate">ToolExecutor<small>validates</small></span><b>→</b><span>YIBO<small>executes</small></span></div>
-            <div class="tool-grid"><button v-for="tool in availableTools" :key="tool.name" type="button" :class="{ enabled: configuration.enabledTools.includes(tool.name) }" @click="toggleTool(tool.name)"><i>{{ tool.icon || '•' }}</i><span><small>{{ tool.kind === 'consult' ? 'Read only' : tool.kind === 'mutate' ? 'Changes data' : 'External action' }}</small><strong>{{ tool.title || tool.name }}</strong><p>{{ tool.help || tool.description }}</p><em>Safe route: {{ tool.route || 'Backend validation' }}</em></span><b></b></button></div>
-            <p class="security-note">The model never receives direct database access. Tenant, call, and customer arrive as trusted system context.</p>
+            <div class="step-heading"><span>04</span><div><h3>Business rules</h3><p>Choose what YIBO may tell callers and do for them. Saved rules apply to new conversations at every location.</p></div></div>
+            <div class="field-grid business-rules">
+              <label class="policy-card"><span class="check-row"><input v-model="configuration.behavior.allowPriceDisclosure" type="checkbox">Tell callers service prices</span><small>When off, YIBO refers pricing questions to staff. Prices stay visible to your office and remain on appointments.</small></label>
+              <label v-for="rule in appointmentRules" :key="rule.tool" class="policy-card"><span class="check-row"><input type="checkbox" :checked="configuration.enabledTools.includes(rule.tool)" @change="toggleTool(rule.tool)">{{ rule.label }}</span><small>Phone: {{ channelAllows(rule.tool, 'phone') ? 'allowed' : 'blocked' }} · Voice Lab: {{ channelAllows(rule.tool, 'voice_lab') ? 'allowed' : 'blocked' }}</small></label>
+            </div>
+            <p class="security-note">Locations can add restrictions in Settings → Locations → AI rules. A location cannot re-enable an action blocked here or by its channel. Booking still requires verified availability and caller agreement.</p>
+            <p>For language and options per offer, use <button type="button" @click="selectStep('identity')">Identity</button>. For phone readback, use <button type="button" @click="selectStep('silence')">Silence</button>. Alternatives outside a requested time are controlled in Settings → Locations → Availability suggestions.</p>
+            <h4>Other capabilities</h4>
+            <div class="tool-grid"><button v-for="tool in otherTools" :key="tool.name" type="button" :aria-pressed="configuration.enabledTools.includes(tool.name)" :class="{ enabled: configuration.enabledTools.includes(tool.name) }" @click="toggleTool(tool.name)"><i>{{ tool.icon || '•' }}</i><span><small>{{ tool.kind === 'consult' ? 'Read only' : tool.kind === 'mutate' ? 'Changes data' : 'External action' }}</small><strong>{{ tool.title || tool.name }}</strong><p>{{ tool.help || tool.description }}</p></span><b></b></button></div>
           </section>
 
           <section v-else-if="step === 'confirmations'" class="step-panel">

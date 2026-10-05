@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { useUnsavedChanges } from "../services/unsaved-changes";
 import { computed, onMounted, ref } from "vue";
-import { createLocationEditor, newLocation } from "../services/location-editor";
+import { createLocationEditor, newLocation, updateAvailabilitySuggestions, initializeLocationControls } from "../services/location-editor";
+import { DEFAULT_AVAILABILITY_SUGGESTIONS, type AvailabilitySuggestionsPolicy } from "../../../src/modules/business/domain/multi-location-business.js";
+import LocationAgentRules from "./LocationAgentRules.vue";
 
+const props = defineProps<{ initialLocationId?: string }>();
 const emit = defineEmits<{ saved: [] }>();
 const editor = createLocationEditor();
 const { state } = editor;
 useUnsavedChanges(() => editor.dirty.value, () => state.busy);
-const selectedId = ref("");
+const selectedId = ref(props.initialLocationId ?? "");
 const location = computed(() => state.draft?.locations.find(({ id }) => id === selectedId.value));
+const suggestions = computed(() => location.value?.policies.availabilitySuggestions ?? DEFAULT_AVAILABILITY_SUGGESTIONS);
+function changeSuggestions(patch: Partial<AvailabilitySuggestionsPolicy>) {
+  if (location.value) updateAvailabilitySuggestions(location.value, patch);
+}
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const addressFields = [
   { key: "line1", label: "Street address", required: true }, { key: "line2", label: "Address line 2", required: false },
@@ -25,22 +32,13 @@ const policyFields = [
 ] as const;
 async function load() {
   await editor.load();
-  state.draft?.locations.forEach(ensureOperationalDefaults);
   if (!state.draft?.locations.some(({ id }) => id === selectedId.value)) selectedId.value = state.draft?.locations[0]?.id ?? "";
 }
 async function save() { if (await editor.save()) emit("saved"); }
 function addLocation() {
   if (!location.value || !state.draft) return;
   const added = newLocation(location.value, crypto.randomUUID());
-  ensureOperationalDefaults(added); state.draft.locations.push(added); selectedId.value = added.id; state.saved = false;
-}
-function ensureOperationalDefaults(value: NonNullable<typeof location.value>) {
-  value.policies.sameDayBooking ??= true; value.policies.cancellationAllowed ??= true;
-  value.policies.reschedulingAllowed ??= true; value.policies.staffOverrideAllowed ??= false;
-  value.aiCapabilities ??= { bookAppointments: true, rescheduleAppointments: true, cancelAppointments: true,
-    quotePrices: true, describeServices: true, offerEarliest: true, offerAlternatives: true,
-    collectEmail: false, collectPhone: true, sendAppointmentEmails: true, transferToHuman: true,
-    afterHoursBehavior: "INFORMATION_ONLY" };
+  initializeLocationControls(added); state.draft.locations.push(added); selectedId.value = added.id; state.saved = false;
 }
 function addClosure() {
   location.value?.closures.push({ id: crypto.randomUUID(), startLocal: "", endLocal: "", administrativeReason: "" });
@@ -64,8 +62,8 @@ onMounted(load);
       <fieldset class="settings-shell" :disabled="state.busy">
         <legend>Location settings · version {{ state.version }}</legend>
         <div class="location-toolbar"><label>Location<select v-model="selectedId"><option v-for="item in state.draft.locations" :key="item.id" :value="item.id">{{ item.name }}{{ item.active ? '' : ' (inactive)' }}</option></select></label>
-        <button type="button" @click="addLocation">+ Add location</button></div>
-        <p class="help">A new location copies service offerings and booking policies, but starts with no phone numbers, professionals or calendar mapping. Set up those assignments before activating it.</p>
+        <button type="button" @click="addLocation">Add inactive location</button></div>
+        <p class="help">A new location copies service offerings and booking policies, but starts with no phone numbers, professionals or calendar mapping. AI rules inherit business settings. Set up those assignments before activating it.</p>
         <template v-if="location">
           <div class="fields identity-fields">
             <label>Name<input v-model="location.name" required></label>
@@ -105,6 +103,15 @@ onMounted(load);
             <label>Slot interval (minutes)<select v-model.number="location.policies.slotIncrementMinutes"><option v-for="minutes in [5, 10, 15, 20, 30, 45, 60]" :key="minutes" :value="minutes">{{ minutes }}</option></select></label>
             <label v-for="field in policyFields" :key="field.key">{{ field.label }}<input v-model.number="location.policies[field.key]" type="number" :min="field.min" step="1" required></label>
           </div>
+          <h3>Availability suggestions</h3>
+          <p class="help">Keep the requested period first. When it has few or no options, optionally offer verified alternatives after that period. These settings apply to availability searches and the agent at this location.</p>
+          <label class="check"><input type="checkbox" :checked="suggestions.enabled" @change="changeSuggestions({ enabled: ($event.target as HTMLInputElement).checked })">Offer alternatives outside the requested period</label>
+          <div class="fields">
+            <label>Search ahead (days)<input type="number" min="1" max="14" step="1" required :disabled="!suggestions.enabled" :value="suggestions.expansionDays" @input="changeSuggestions({ expansionDays: Number(($event.target as HTMLInputElement).value) })"></label>
+            <label>Maximum alternative options<input type="number" min="1" max="5" step="1" required :disabled="!suggestions.enabled" :value="suggestions.maximumAlternatives" @input="changeSuggestions({ maximumAlternatives: Number(($event.target as HTMLInputElement).value) })"></label>
+          </div>
+          <p class="help">Search ahead uses 24-hour periods after the requested end. Business hours, provider schedules, booking limits and Calendar conflicts still apply. No appointment is chosen automatically.</p>
+          <LocationAgentRules :location="location" />
           <div class="toggle-grid">
             <label class="check"><input v-model="location.policies.sameDayBooking" type="checkbox">Allow same-day booking</label>
             <label class="check"><input v-model="location.policies.cancellationAllowed" type="checkbox">Allow cancellation</label>
@@ -112,7 +119,7 @@ onMounted(load);
             <label class="check"><input v-model="location.policies.staffOverrideAllowed" type="checkbox">Allow authorized staff overrides</label>
           </div>
           <h3>AI permissions</h3>
-          <p class="help">These controls are enforced by backend tool policy. Turning a capability off removes or restricts the corresponding action.</p>
+          <p class="help">These additional restrictions combine with Business rules and the location overrides above; a disabled permission always wins. Turning a capability off removes or restricts the corresponding action.</p>
           <div v-if="location.aiCapabilities" class="toggle-grid ai-toggle-grid">
             <label class="check"><input v-model="location.aiCapabilities.bookAppointments" type="checkbox">Book appointments</label>
             <label class="check"><input v-model="location.aiCapabilities.rescheduleAppointments" type="checkbox">Reschedule appointments</label>

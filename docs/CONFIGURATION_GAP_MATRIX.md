@@ -52,4 +52,3 @@ Status values: `EXPOSED_AND_USED`, `BACKEND_ONLY`, `FRONTEND_DISCONNECTED`,
    execution, then expose them in human-friendly settings.
 6. Add readiness reporting and finer business-facing roles while keeping
    provider secrets server-only.
-

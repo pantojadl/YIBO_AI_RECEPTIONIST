@@ -245,6 +245,10 @@ select { border-color: #ccc4b7; background: #fffaf2; }
 .agent-view .agent-config.agent-config-v2 .restore { color: #536b96; border-color: #b8c3d1; }
 .agent-view .agent-config.agent-config-v2 .save { color: #fff; background: #2854c7; box-shadow: 4px 5px 0 #b6c8df; }
 
+@media (max-width: 1050px) {
+  .agent-view .agent-config.agent-config-v2 .config-layout { grid-template-columns: minmax(0, 1fr); }
+  .agent-view .agent-config.agent-config-v2 .agent-preview { margin: 20px 5% 30px; }
+}
 @media (max-width: 1000px) {
   .home-dashboard { grid-template-columns: 1fr; }
   .home-calendar { grid-template-columns: 52px 1fr auto; }

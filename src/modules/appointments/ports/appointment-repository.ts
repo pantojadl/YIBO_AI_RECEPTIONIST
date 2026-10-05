@@ -11,6 +11,10 @@ import type { Appointment, AppointmentEvent } from "../domain/appointment.js";
 export interface AppointmentRepository {
   findById(tenantId: TenantId, appointmentId: AppointmentId): Promise<Appointment | null>;
   findByIdempotencyKey(tenantId: TenantId, key: IdempotencyKey): Promise<Appointment | null>;
+  /** All statuses overlapping a bounded calendar period; no upcoming-only filter. */
+  findInRange(query: {
+    tenantId: TenantId; locationId: LocationId; rangeStart: ISODateTime; rangeEnd: ISODateTime;
+  }): Promise<Appointment[]>;
   findUpcomingByCustomer(query: {
     tenantId: TenantId;
     locationId: LocationId;

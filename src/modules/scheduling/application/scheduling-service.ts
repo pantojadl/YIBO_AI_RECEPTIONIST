@@ -1,3 +1,4 @@
+import { DEFAULT_AVAILABILITY_SUGGESTIONS } from "../../business/domain/multi-location-business.js";
 import { failure, success } from "../../../shared/domain/result.js";
 import type { Clock } from "../../../shared/application/system.js";
 import type { LocationClosure, OpeningHoursRule, ProfessionalDefinition, TenantServiceDefinition } from "../../business/index.js";
@@ -33,6 +34,27 @@ export class SchedulingServiceImpl implements SchedulingService {
   ) {}
 
   async findAvailableSlots(query: FindAvailableSlotsQuery) {
+    const requested = await this.findWithinRange(query);
+    if (!requested.ok || query.limit === 0) return requested;
+    const context = await this.businessDirectory.getLocation(query.tenantId, query.locationId);
+    if (!context.ok) return requested;
+    const policy = context.value.location.policies.availabilitySuggestions ?? DEFAULT_AVAILABILITY_SUGGESTIONS;
+    // An omitted policy preserves the exact-range contract of existing installations.
+    if (!policy?.enabled || requested.value.length >= policy.maximumAlternatives) return requested;
+    const range = parseRange(query.rangeStart, query.rangeEnd)!;
+    // First strategy: search forward from the requested period, bounded by the
+    // same booking horizon, hours, closures, capacity and Calendar checks.
+    const alternatives = await this.findWithinRange({ ...query,
+      rangeStart: range.end.toISOString(),
+      rangeEnd: new Date(range.end.valueOf() + policy.expansionDays * 86_400_000).toISOString(),
+      limit: policy.maximumAlternatives,
+    });
+    // Never hide a provider failure or misrepresent an unverified expansion.
+    if (!alternatives.ok) return alternatives;
+    return success([...requested.value, ...alternatives.value.map(slot => ({ ...slot, outsideRequestedRange: true as const }))]);
+  }
+
+  private async findWithinRange(query: FindAvailableSlotsQuery) {
     const range = parseRange(query.rangeStart, query.rangeEnd);
     if (!range) return failure<SchedulingError>({ code: "INVALID_TIME_RANGE" });
 

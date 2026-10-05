@@ -33,11 +33,22 @@ export const localParts = (date: Date, timezone: string): LocalDateTimeParts => 
 };
 
 export const toUtc = (local: LocalDateTimeParts, timezone: string): Date => {
-  const guessedUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
-  const rendered = localParts(new Date(guessedUtc), timezone);
-  const offsetCorrection = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute)
-    - Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute);
-  return new Date(guessedUtc + offsetCorrection);
+  // One offset correction is wrong when the guess and the real instant sit on
+  // opposite sides of a DST transition (a 7 AM opening can land an hour later).
+  // Repeat until the rendered clinic-local time matches, and reject gaps such
+  // as the skipped spring-forward hour instead of silently shifting them.
+  let utc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+  const desired = utc;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const rendered = localParts(new Date(utc), timezone);
+    const actual = Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute);
+    if (desired === actual) return new Date(utc);
+    utc += desired - actual;
+  }
+  const rendered = localParts(new Date(utc), timezone);
+  const matches = rendered.year === local.year && rendered.month === local.month
+    && rendered.day === local.day && rendered.hour === local.hour && rendered.minute === local.minute;
+  return matches ? new Date(utc) : new Date(Number.NaN);
 };
 
 /**

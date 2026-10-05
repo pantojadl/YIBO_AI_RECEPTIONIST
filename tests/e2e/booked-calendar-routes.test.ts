@@ -7,7 +7,11 @@ describe("booked calendar routing through phone and Google boundaries", () => {
     const f = phoneOperations(50400);
     try {
       const first = await f.start();
+      // Launch candidate: a voice booking before contact confirmation must not create a calendar event.
+      expect(await tool(first, "create_appointment", booking)).toMatchObject({ ok: false, error: { code: "CONTACT_CONFIRMATION_REQUIRED" } });
+      expect(f.events.size).toBe(0);
       expect(await confirmContact(first)).toMatchObject({ ok: true });
+      // Main hardening: book only a slot that check_availability just verified.
       expect(await available(first)).toMatchObject({ ok: true });
       expect(await tool(first, "create_appointment", booking)).toMatchObject({ ok: true });
       const originalId = [...f.events.keys()][0]!;
@@ -33,9 +37,14 @@ describe("booked calendar routing through phone and Google boundaries", () => {
       expect(await tool(second, "cancel_appointment", { appointmentReference: "upcoming-1" })).toMatchObject({ ok: true });
       expect(f.events.size).toBe(0);
       expect(await change()).toMatchObject({ ok: true, value: { version: 2 } });
+      // Re-verify the new instant. An earlier check_availability stores requestedStartAt for this call
+      // and would otherwise override this later booking.
+      expect(await available(first, "2026-09-21T19:00:00Z")).toMatchObject({ ok: true });
       expect(await tool(first, "create_appointment", { ...booking, startAt: "2026-09-21T19:00:00Z" })).toMatchObject({ ok: true });
       expect(f.events.size).toBe(1);
-      expect(f.eventCalendars.get([...f.events.keys()][0]!)).toBe("new@example.test");
+      const createdId = [...f.events.keys()][0]!;
+      expect(Date.parse(f.events.get(createdId)!.start.dateTime)).toBe(Date.parse("2026-09-21T19:00:00Z"));
+      expect(f.eventCalendars.get(createdId)).toBe("new@example.test");
       expect(f.fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/events") && init?.method === "POST")).toHaveLength(3);
     } finally { await f.close(); }
   });

@@ -1,6 +1,9 @@
 export { AppointmentServiceImpl } from "./application/appointment-service.js";
 export type {
   AppointmentLookupError,
+  AppointmentEditConflict,
+  AppointmentCalendarQuery,
+  AppointmentCalendarEntry,
   AppointmentService,
   CancelAppointmentCommand,
   CancelAppointmentError,
@@ -24,3 +27,5 @@ export type {
 export { InMemoryAppointmentRepository } from "./infrastructure/in-memory-appointment-repository.js";
 export { InMemoryAppointmentConcurrencyGuard } from "./infrastructure/in-memory-appointment-concurrency-guard.js";
 export { InMemoryAppointmentCalendar } from "./infrastructure/in-memory-appointment-calendar.js";
+
+export { AppointmentOperationInProgressError } from "./ports/appointment-dependencies.js";

@@ -1,3 +1,4 @@
+import { PhoneReadbackToolExecutor } from "./phone-readback.js";
 import { failure, success } from "../../../shared/domain/result.js";
 import type { AgentConfigurationSource } from "../ports/agent-dependencies.js";
 import type {
@@ -12,6 +13,7 @@ import { resolvedAiCapabilities, type BusinessDirectory, type LocationAiCapabili
 import { AgentPromptCompiler } from "./agent-prompt-compiler.js";
 import { PolicyEnforcingToolExecutor } from "./policy-enforcing-tool-executor.js";
 import { ConfirmationGateToolExecutor } from "./confirmation-gate-tool-executor.js";
+import { PriceDisclosureToolExecutor, resolveBusinessAgentPolicy } from "./business-agent-policy.js";
 
 export class AgentDefinitionService implements AgentDefinitionFactory {
   constructor(
@@ -34,8 +36,11 @@ export class AgentDefinitionService implements AgentDefinitionFactory {
       return failure<AgentDefinitionError>({ code: "CHANNEL_CONFIGURATION_INCOMPATIBLE" });
     }
     const channelPolicy = configuration.toolPolicies.channels[channel];
+    const effective = resolveBusinessAgentPolicy(configuration, location.value.location);
+    const disabledTools = new Set<string>(effective.disabledTools);
     const businessCapabilities = resolvedAiCapabilities(location.value.location);
-    const behavior = structuredClone(configuration.behavior);
+    const behavior = effective.behavior;
+    behavior.allowPriceDisclosure = behavior.allowPriceDisclosure && businessCapabilities.quotePrices;
     if (!businessCapabilities.offerAlternatives) behavior.slotOffering.maximumOptions = 1;
     if (!businessCapabilities.offerEarliest && behavior.slotOffering.strategy === "earliest_first") {
       behavior.slotOffering.strategy = "match_requested_time";
@@ -45,41 +50,47 @@ export class AgentDefinitionService implements AgentDefinitionFactory {
       isDeveloperTestTool(tool.name)
         ? command.developerTestModeAuthorized && channelPolicy.toolChoice !== "none"
         : configuration.enabledTools.includes(tool.name) && channelTools.has(tool.name)
-          && capabilityAllowsTool(tool.name, businessCapabilities),
+          && !disabledTools.has(tool.name) && capabilityAllowsTool(tool.name, businessCapabilities),
     );
+    const confirmationRequiredFor = configuration.toolPolicies.confirmations.requiredFor
+      .filter((name) => tools.some((tool) => tool.name === name));
     const instructions = this.prompts.compile({
       editableInstructions: configuration.identity.instructions,
-      locale: configuration.identity.locale,
+      locale: effective.locale,
       businessName: location.value.business.name,
       locationName: location.value.location.name,
       locationTimezone: location.value.location.timezone,
       enabledTools: tools.map(({ name }) => name),
-      confirmationRequiredFor: configuration.toolPolicies.confirmations.requiredFor
-        .filter((name) => tools.some((tool) => tool.name === name)),
+      confirmationRequiredFor,
       behavior,
-      priceDisclosureAllowed: businessCapabilities.quotePrices,
       emailCollectionAllowed: businessCapabilities.collectEmail,
+      phoneCollectionAllowed: businessCapabilities.collectPhone,
+      alternativesAllowed: businessCapabilities.offerAlternatives,
       afterHoursBehavior: businessCapabilities.afterHoursBehavior,
     });
 
     const definition: AgentDefinition = {
       instructions,
-      locale: configuration.identity.locale,
+      locale: effective.locale,
       voice: configuration.audio.voice,
       conversation: structuredClone(configuration.conversation),
       audio: structuredClone(configuration.audio),
-      behavior,
-      toolChoice: channelPolicy.toolChoice,
+      behavior: effective.behavior,
+      // A location may remove the channel's last tool. Never require an impossible call.
+      toolChoice: tools.length === 0 && channelPolicy.toolChoice === "required" ? "auto" : channelPolicy.toolChoice,
       parallelToolCalls: channelPolicy.parallelToolCalls,
       channel,
       tools,
       toolExecutor: new ConfirmationGateToolExecutor(
         new PolicyEnforcingToolExecutor(
-          this.toolExecutor,
+          new PriceDisclosureToolExecutor(
+            new PhoneReadbackToolExecutor(this.toolExecutor, effective.behavior.phoneReadback),
+            effective.behavior.allowPriceDisclosure,
+          ),
           tools.map(({ name }) => name),
           configuration.toolPolicies,
         ),
-        configuration.toolPolicies.confirmations.requiredFor,
+        confirmationRequiredFor,
       ),
       trustedContext: { ...command },
     };

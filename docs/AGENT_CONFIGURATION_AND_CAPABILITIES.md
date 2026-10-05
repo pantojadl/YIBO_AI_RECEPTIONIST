@@ -80,6 +80,14 @@ rechaza.
 
 ## Controles Realtime editables
 
+El checkpoint [Model Configuration Pipeline](MODEL_CONFIGURATION_PIPELINE.md)
+añade `behavior.allowPriceDisclosure` (default `true`) y overrides opcionales
+por sucursal dentro del documento de negocio existente. Incluye tabla de campos,
+defaults, valores válidos, precedencia, controles UI y consumidores efectivos.
+Las restricciones de acciones se aplican en el ejecutor; los precios estructurados
+se filtran antes de entregar resultados al modelo. El contexto confiable selecciona
+la sucursal. No se usa un segundo almacén ni preferencias de perfiles de clientes.
+
 | Sección | Controles | Default conservador |
 |---|---|---|
 | `identity` | instrucciones y locale | locale del tenant |

@@ -3,6 +3,391 @@
 Este archivo es la fuente de verdad viva del avance. Los documentos `BASELINE_*`
 son históricos y los ADR registran decisiones; ninguno sustituye este tablero.
 
+## Estado de esta rama — endurecimiento final sobre main + launch candidate
+
+- Base: `main` (`01dc29a7`, 27 de septiembre de 2026), que ya contiene el merge de final release hardening.
+- Integrado aquí: `codex/yibo-launch-candidate` (`6ec8c020`, 4 de octubre de 2026), que diverge de main y aporta el arreglo de edición concurrente (`3046c82`) y el UX de producto.
+- `codex/final-release-hardening`, `codex/release-blockers`, `codex/release-ops-closure` y `codex/recovered-work` no aportan commits ausentes de main.
+- Los dos commits únicos de `codex/integrate-telephony-and-finish` ya viajan dentro del launch candidate.
+- Los checkpoints de abajo se conservan de ambos padres. El más reciente describe el launch candidate; el de main describe el cierre de hardening ya integrado.
+
+## Launch candidate — Worker público verificado, API pendiente — 4 de octubre de 2026
+
+- URL real proporcionada por el usuario: **https://yibo-ai-receptionist.28rc9ktmdp.workers.dev**.
+  HTTPS 200; HTML/CSS/JS coinciden por SHA-256 con el build del launch candidate.
+  `/index.html` redirige 307 a `/` y termina en 200; SPA de appointments disponible.
+- Browser muestra login y **Authentication is unavailable right now**. Health,
+  auth/me, business y readiness devuelven **503 API_PROXY_NOT_CONFIGURED**, sin caché.
+  Falta verificar `API_ORIGIN` y presencia del par Access; no es prueba de password
+  incorrecto. Sin login, escritura, acceso a datos de pacientes ni calls a proveedores.
+- Browser convierte HTTP a HTTPS y carga sin bucle, compatible con HSTS preloaded
+  de `.dev`. curl/HEAD/GET sin HSTS reciben HTTP 200: no hay redirect de servidor;
+  esa observación no se clasifica como fallo del browser. Sin cambiar configuración.
+- Documentado `YIBO_DASHBOARD_ORIGIN` exacto; no aplicado. Host backend, API origin,
+  restart/persistencia, monitoreo y restore off-host siguen pendientes. El error
+  previo en la sesión Codex no demostraba ausencia del Worker o acceso del usuario.
+- Preflight local más reciente **34/34** (28 proxy + 6 auth), typechecks backend,
+  frontend y Worker, build y dry-run aprobados; sin upload. No se repitieron tras
+  los GET públicos porque no cambió código. El worktree Cloudflare conserva sus
+  borradores; no se creó otro Worker ni se cambió main/PBX/7001/Calendar/datos live.
+- Próximo paso: inspeccionar bindings del Worker existente y concretar backend
+  persistente aislado; reconciliar nombre/`workers_dev` antes de desplegar de nuevo.
+  **DEPLOY-001 sigue abierto**. [Resultados y siguientes pasos](DEPLOYMENT_CHECKPOINT.md).
+
+## Launch candidate — checkpoint 6 preparado, despliegue pendiente — 3 de octubre de 2026
+
+- El usuario informó que **7001 funcionó** y autorizó avanzar a checkpoint 6.
+  La reparación aprobada del 1 de octubre cambió sólo `yibo-audio-test` a Speex
+  16 kHz; backup/reload/registro/aislamiento verificados. La ventana diagnóstica
+  acabó sin captar la llamada posterior: no se declaran verificadas todas las
+  variantes de ACCEPT-001. [Evidencia y límites](LAUNCH_7001_SPEAKERPHONE_REPAIR.md).
+- VPS Asterisk inspeccionado **read-only** el 2 de octubre: Ubuntu 24.04, 1 vCPU,
+  961.5 MiB RAM, 558.8 MiB disponibles, sin swap, 7.71 GiB libres. En reposo y sin
+  llamadas; no demuestra margen bajo carga. Se recomienda **otro VPS para el backend**
+  para preservar telefonía; sin instalar, redimensionar ni cambiar servicios/red.
+- Reutilizadas las plantillas Node del borrador Cloudflare, dejando intacto su
+  worktree. Worker configurado `yibo-dashboard`; URL pública, dominio y `API_ORIGIN`
+  reales no constan en repo. Sin cambio/despliegue en Cloudflare.
+- Inspección Cloudflare **read-only, 3 de octubre 19:57 UTC**: browser autenticado,
+  una sola cuenta disponible; Workers & Pages sin proyectos, Domains sin dominios
+  y Tunnels en pantalla inicial. CLI Wrangler sin autenticación. No identifica el
+  despliegue informado por el usuario ni prueba su ausencia en otra cuenta/login.
+  Se requiere URL pública existente o acceso a la cuenta propietaria antes de
+  definir `API_ORIGIN`; sin crear recursos, modificar settings ni revelar secretos.
+- Seguimiento GitHub: el check de `40f8942` enlaza **`yibo-ai-receptionist` en otra
+  cuenta Cloudflare**, distinta del nombre local Wrangler `yibo-dashboard`.
+  El login actual recibe Page not found/posible falta de acceso. El check terminal
+  del 28 de septiembre fue failure; no demuestra el estado de un despliegue manual
+  posterior. Cuenta/proyecto originales identificados, pero URL pública y settings
+  siguen sin verificar. Sin retry, rename ni cambios de acceso/configuración.
+- CLI operativo de backup/verificación/restore: SQLite online con WAL, rutas
+  regionales explícitas, integridad/FK/región/checksums, restore sólo en directorio
+  nuevo. No migra originales, inicia proveedores, sobrescribe archivos ni libera claims.
+- Plantillas de servicio API y backup/timer, upload restic con errores seguros,
+  timeout y conservación de snapshots/logs. No se instalaron/activaron; destino remoto,
+  credenciales, retención y alertas requieren configuración del operador.
+- **34 pruebas focales aprobadas (19 nuevas)**. Rehearsal real de SQLite sintético
+  MX/US: conserva datos/configuración/identidad Google/historial/notificaciones,
+  claves cifradas y login mediante Fastify; fuente main/WAL intacta. Restic se simula
+  sólo en tests de ejecución/fallos: no se afirma upload/restore off-host real.
+- **Typechecks backend/frontend y build de producción aprobados**; sintaxis shell
+  aprobada. pnpm mantuvo verificación de firmas; el build necesitó acceso de red
+  para esa verificación. No se repitió la suite completa: sin cambios a lógica de negocio.
+- **DEPLOY-001 sigue abierto**: host nuevo, dominios, servicios/Linux, HTTPS/Access,
+  pruebas del dashboard desplegado, monitoreo y backup remoto con restore real.
+  [Plan, variables y procedimiento exacto](DEPLOYMENT_CHECKPOINT.md).
+- `main`, servicio telefónico, 7001, Google/OAuth, datos de producción y subsistemas
+  Customer Profiles/Email Notifications sin cambios. No se inició onboarding/piloto.
+
+## Launch candidate — cierre browser sintético — 30 de septiembre de 2026
+
+- Worktree reanudado **limpio en `2117c5d`**: no había cambios de implementación
+  sin commit. Merge `6b82aa9`, fuentes Product `7078d49` / Operations `785389f`,
+  concurrencia `3046c82` y Google real `a437ea2` conservados; no se reintegró nada.
+- Browser aislado **3113/5381**, SQLite sintético y Calendar en memoria: secretario
+  crea en Office, reprograma en Appointments y cancela en Office; mismo ID de cita
+  y evento, revisiones 2→3→4, slot liberado, historial/timeline y emails SKIPPED.
+- Settings guarda/persiste tras reload y recupera valores originales; catálogo,
+  asignaciones, mappings, dos profesionales y roles owner/manager/secretary/read-only
+  verificados. Layouts compactos **390 px** sin overflow en las pantallas revisadas.
+- Voice Lab real UI/controller con fixture privado **5382/4319**: playback/interrupt,
+  costo **$0.013128**, cierre único, segunda sesión en la misma página con contadores
+  reiniciados y **< US$0.0001**, cierre duplicado/usage tardío ignorados, actividad
+  navegable y sockets cerrados. Sin micrófono ni proveedor live; procesos temporales
+  detenidos. Picker WAV quedó sin verificar por fallo del control de browser; se
+  usaron botones temporales que invocan el mismo método de sesión, fuera del repo.
+- **56/56 pruebas focales**, typechecks backend/frontend y build aprobados; sin
+  cambios de runtime después. No se repitió la suite completa ya verde 679+1.
+- Sólo documentación; sin main, Cloudflare, PBX/7001, Google/OAuth live, datos reales
+  ni cambios a sistemas del compañero. No se encontró nueva regresión/concurrencia.
+- Siguiente gate exacto del PDF: **checkpoint 5 / ACCEPT-001**, llamada humana real
+  en ruta aislada verificada. Estado telefónico actual no inspeccionado; los apartados
+  anteriores son snapshots fechados, no garantía de readiness actual. Se pausa aquí;
+  deployment/restore/piloto no se adelantan. [Evidencia y límites](LAUNCH_BROWSER_ACCEPTANCE.md).
+
+## Launch candidate — entorno telefónico aislado preparado — 27 de septiembre de 2026
+
+- API nueva **3114 en standby**, sin conexión ARI ni requests a proveedores.
+  SQLite privado/sintético nuevo, migración 11 y defaults de agente v4; sin datos
+  reales copiados ni delivery de emails. Grant del Calendar de prueba verificado
+  copiado desde almacén read-only y recifrado; fuente/.env originales intactos.
+- RTP **50500–50509**: diez puertos disponibles en interfaz privada, bind/cierre
+  sin paquetes. Configuración existente 40000–40020 intacta. Procesos 3000/4317 y
+  aceptación anterior 3101/5274 conservan PID/listeners; no se reiniciaron.
+- PBX read-only confirma permisos/módulo/rutas baseline y un contacto registrado
+  del endpoint Linphone `yibo-audio-test`. Candidate 7001 preparado sólo localmente:
+  un argumento Stasis de `yibo` a `yibo-accept001-isolated`; no aplicado al PBX.
+- Health **200**, acceso admin sin sesión **401**, **29 pruebas focales aprobadas**
+  en cuatro archivos de flujo telefónico/ARI/RTP. Sin cambios de código; no se
+  repitieron typechecks/build/suite completa ya verdes para este runtime.
+- **ACCEPT-001 sigue pendiente** de autorización separada para routing/activación
+  aislada y llamada humana. RTP remoto, conversación, confirmación hablada y
+  hangup real siguen sin verificar. [Propuesta exacta y guion](LAUNCH_ISOLATED_PHONE_ROUTE_PROPOSAL.md).
+  Sin cambios a main, Google/OAuth live, rutas públicas ni subsistemas del compañero.
+
+## Launch candidate — recuperación del dialplan PBX — 27 de septiembre de 2026
+
+- Usuario aprobó expresamente el cambio de grupo y carga del módulo después del
+  diagnóstico. Reparación completada a las **18:21:53 UTC**.
+- Backup privado con metadata verificada en
+  `/root/yibo-dialplan-permission-backup-20260927T182153Z-hwm70629`;
+  backup previo conservado. Sólo grupo de `extensions.conf`: `root` → `asterisk`.
+  Owner root, modo 0640 y SHA-256/contenido intactos; usuario del servicio ya puede leer.
+- `pbx_config.so` cargado una vez y Running; contextos 7001/from-pstn coinciden
+  con snapshots previos. 7001 y reglas públicas explícitas siguen en `yibo` normal.
+  Mismo PID Asterisk, sin reinicio, reload global, edición de rutas ni otro cambio.
+- ARI posterior **18:22:28 UTC**: cuatro GET HTTP 200, cero canales/bridges/apps.
+  No se inició/reinició servicio YIBO normal. [Evidencia y procedimiento](PBX_DIALPLAN_RECOVERY_PROPOSAL.md).
+- ACCEPT-001 pendiente: reconstruir entorno privado, aprobar por separado ruta
+  aislada y llamada humana. Sin cambios de código/main/Google; no se repitieron
+  suites/typechecks/build porque este checkpoint sólo registra la operación aprobada.
+
+## Launch candidate — diagnóstico PBX previo a reparación — 27 de septiembre de 2026
+
+- Reconexión Tailscale aprobada explícitamente y ejecutada sin flags/settings nuevos.
+  Mac/PBX online, ruta privada restablecida; SSH y cuatro GET ARI HTTP 200.
+- **Bloqueo reproducido**: `extensions.conf` es `root:root 0640`; el usuario
+  `asterisk` no puede leerlo. `pbx_config.so` Not Running; contextos 7001/from-pstn
+  ausentes de memoria. Archivo idéntico al backup de rollback, destinos `yibo` intactos.
+- Cero llamadas/canales/bridges y ninguna aplicación ARI registrada al inspeccionar.
+  Sin cambiar permisos, módulos, configuración, rutas o servicios del PBX.
+- [Propuesta exacta pendiente de aprobación](PBX_DIALPLAN_RECOVERY_PROPOSAL.md):
+  grupo del archivo a `asterisk`, conservando owner/mode/contenido; cargar únicamente
+  el módulo inactivo. Activa contextos públicos existentes, por eso requiere permiso.
+- Entorno aislado temporal anterior ya no contiene `.env`; reconstruirlo privadamente
+  antes de habilitar ingress. RTP de prueba previsto 50500–50509, separado de 40000–40020.
+- ACCEPT-001 sigue sin llamada real. Sin cambios de código, main o Google/OAuth.
+  Validación documental/read-only; typechecks/build/suite previos siguen como evidencia.
+
+## Launch candidate — preflight telefónico — 26 de septiembre de 2026
+
+- RISK-001 `3046c82` y Google real `a437ea2` completos y respaldados.
+- **ACCEPT-001 bloqueado**: SSH y GET ARI info/applications/channels/bridges
+  agotan timeout desde esta Mac. Diagnóstico read-only adicional: Tailscale local
+  `Stopped`, `WantRunning=false`, sin IP privada activa; tráfico PBX por gateway Wi-Fi.
+  Perfil sigue autenticado, sin exit node. Esto no confirma caída del PBX ni resuelve
+  la validación 7001. Dialplan actual y recursos activos siguen sin verificar.
+- No llamada, subscription ARI, cambio de 7001/from-pstn, reload/restart ni nueva
+  configuración. Se conserva el rollback previamente verificado.
+- Propuesta pendiente de aprobación: reconectar perfil Tailscale existente con
+  `tailscale up` sin flags ni cambios de settings; activa DNS/rutas privadas guardadas.
+  No reconexión realizada. Después restablecer acceso PBX e inspección read-only,
+  propuesta/permiso explícito para ruta aislada y llamada real del usuario.
+  [Evidencia y pasos](LAUNCH_PHONE_PREFLIGHT.md). Despliegue/restore/piloto no iniciados.
+
+## Launch candidate — Google real — 26 de septiembre de 2026
+
+- **Checkpoint 4 completo**, código `3046c82` en `codex/yibo-launch-candidate`.
+  Calendario existente **YIBO Test Appointments**, aplicación/SQLite privados nuevos,
+  datos sintéticos y telefonía/Realtime/email deshabilitados.
+- Grant existente refresca HTTP 200. Almacén original abierto sólo lectura, copia
+  cifrada privada; sin cambiar OAuth, mappings, configuración live ni main.
+- FreeBusy real → dos reservas → recuperar/verificar → dos reprogramaciones del
+  mismo ID → rechazo de cancelación obsoleta sin request a Google → cancelar.
+  HTTP 200/204; hora/zona local exactas, revisiones 2→3→4→5, sin duplicados.
+- Vecino sintético intacto durante cambios/cancelación; los **15 eventos previos**
+  conservan ID/etag. Limpieza verificada de ambas citas, estados locales CANCELLED,
+  IDs originales conservados y cero claims pendientes.
+- **38 verificaciones live y 31/31 pruebas Google focales aprobadas**. Typechecks,
+  build y suite 679+1 ya verdes para este mismo código; checkpoint sólo documental.
+- [Evidencia y límites](LAUNCH_GOOGLE_ACCEPTANCE.md). Siguiente gate: **ACCEPT-001**,
+  llamada real por ruta aislada aprobada. 7001 permanece revertido; no se reintentó
+  routing ni se simula una aceptación de voz. Despliegue/restore y piloto pendientes.
+
+## Launch candidate — RISK-001 — 26 de septiembre de 2026
+
+- **Checkpoint 3 completo** en `codex/yibo-launch-candidate`; conserva integración
+  `6b82aa9` y regresión `1ce4b07`. Sin cambios a main ni configuración live.
+- Cuatro carreras reproducidas antes de corregir: reprogramación tardía revivía
+  cancelación local, outcome perdido, cancelación duplicada e historial desactualizado.
+- Crear/reprogramar/cancelar/outcome comparten guardia de sucursal y releen dentro
+  de ella. Migración 11 añade revisiones y claims SQLite entre procesos API/voz.
+  UI y referencias de voz comparan versión; conflictos rechazan sin escritura externa
+  ni reintento automático. Se mantiene el ID original y vecinos intactos.
+- **15 pruebas nuevas; 679 aprobadas, 1 live opcional omitida**, 90 archivos aprobados;
+  ambos typechecks/build. Copias MX/US 9→11, defaults/versiones, idempotencia y reopen.
+- Browser sintético 3113/5381: dos pestañas Office/Product rechazan cancelación
+  obsoleta, recargan hora actual y permiten cancelar tras revisión; dos cambios,
+  una cancelación e intervalo liberado. Sin proveedores live.
+- Claims no expiran: tras caída se reconcilia Google/local antes de liberar el claim
+  exacto. Todos los writers deben actualizarse juntos; clientes HTTP legacy sin
+  `If-Match` conservan compatibilidad, sin detección de intención obsoleta.
+- [Contrato, evidencia y recuperación](APPOINTMENT_EDIT_PROTECTION.md).
+  Siguiente gate del PDF: **Google real en calendario aislado**, después ACCEPT-001;
+  7001 permanece revertido, sin nueva autorización de routing.
+
+## Launch candidate — regresión completa — 25 de septiembre de 2026
+
+- Integración `6b82aa9` respaldada en `origin/codex/yibo-launch-candidate`;
+  ramas fuente `7078d49` / `785389f` conservadas. Sin cambios a main ni servicios live.
+- **664 pruebas aprobadas, 1 live opcional omitida**, 88 archivos aprobados;
+  ambos typechecks y build de producción aprobados.
+- Fixtures RTP/PBX requieren sockets loopback fuera del sandbox. Dos scripts E2E
+  históricos de rutas Calendar ahora confirman/persisten contacto antes de reservar;
+  conservan todas sus verificaciones de identidad, vecinos, mapping, cambios y borrado.
+- **Checkpoint 2 completo.** Siguiente paso del PDF: **RISK-001**, concurrencia de
+  citas. Gates de Google real, teléfono, despliegue/restore y piloto pendientes.
+  [Registro de validación](LAUNCH_CANDIDATE.md).
+
+## Launch candidate — integración — 25 de septiembre de 2026
+
+- Plan autorizado: `YIBO_Alan_Codex_Instructions.pdf`, leído completo (6 páginas).
+  Rama dedicada **`codex/yibo-launch-candidate`**, creada desde Product/UX.
+- Remotos verificados con fetch y `ls-remote`: Product/UX
+  `7078d49e8ad312f2f4ab797ee184d2e933818297`; Business Operations
+  `785389f3c6aea89c2f4d26ec1a7b433669f6b668`; integración telefónica
+  `46ce7135a6e6118c14c387b103957868a672645e`, ya ancestro de Product/UX.
+  Divergencia real al integrar: **10 commits Product/UX / 9 Operations**.
+- Se conserva el checkout telefónico con sus cambios locales, ambos branches fuente,
+  `main`, configuración de 7001, proveedores live y credenciales. Merge con dos
+  padres; sin squash, reset, force-push ni despliegue.
+- Integración conserva Appointments/Availability de Product/UX y Office schedule,
+  Customers, Team availability, outcomes, notificaciones y roles de Operations.
+  Mantiene políticas/overrides, precios redactados, readback configurable, locale,
+  contacto confirmado, lifecycle Voice Lab y costos por sesión.
+- Correcciones de integración: timeline verifica sucursal antes de devolver emails;
+  controles legacy se normalizan antes del baseline de cambios sin guardar;
+  acciones de oficina respetan estados/permisos visibles. OAuth conserva la sonda
+  de eventos ya verificada e incorpora diagnóstico de revocación/API deshabilitada.
+- **291 pruebas focales distintas aprobadas (18 nuevas)**, ambos typechecks y build.
+  Browser aislado 3113/5381, SQLite sintético/calendario en memoria: crear en Office →
+  historial Customers → reprogramar en Appointments → cancelar en Office;
+  mismo registro, timeline/notifications `SKIPPED`, slot liberado y layout 390 px.
+  No se iniciaron Google, Resend, Asterisk ni Realtime live.
+- **Checkpoint 1 completo**; las verificaciones live históricas no certifican esta
+  combinación. Próximo gate: regresión completa del candidato (checkpoint 2), después
+  **RISK-001** (checkpoint 3). Google real, ACCEPT-001, despliegue/restore y piloto
+  siguen pendientes según el PDF. [Evidencia y decisiones](LAUNCH_CANDIDATE.md).
+
+## Product/UX — Appointments Calendar UI — 24 de septiembre de 2026
+
+- **Checkpoint completo** en `codex/product-ux-improvements`; conserva `7510f7a`
+  y todos los checkpoints anteriores. El usuario aceptó por ahora las comprobaciones
+  manuales de Voice Lab y autorizó expresamente este alcance.
+- Appointments ofrece día, semana y agenda; navegación por fecha, sucursal,
+  profesional y citas canceladas. Muestra nombres del cliente/profesional, estado,
+  zona local y precios históricos; incluye citas pasadas y estados que necesitan revisión.
+- Reserva manual con cliente por teléfono reutiliza el find-or-create existente,
+  Availability UI y los APIs actuales. Reprogramar/cancelar reutiliza el editor,
+  políticas de aviso, validación de capacidad/slots, identidad del evento y Calendar.
+- Nuevo read de calendario (máximo 31 días, sin truncar citas) reutiliza repositorios
+  SQLite/in-memory, CustomerReader y configuración existente. Aislamiento de
+  región/tenant/sucursal; sin migración, nuevo motor, Customer Profiles ni Email Notifications.
+- **119 checks focales distintos aprobados** (26 nuevos), ambos typechecks y build.
+  Browser aislado: crear → reprogramar → cancelar, persistencia al abrir otra página,
+  mismo ID/evento sin duplicados, hora liberada, filtros, historial y layout móvil 390 px.
+  Cita de prueba cancelada; configuración live, telefonía/7001, OAuth/Google y main intactos.
+- [Alcance, API, evidencia, límites y puntos de integración](PRODUCT_UX_APPOINTMENTS_CALENDAR.md).
+  Pendiente antes del piloto: smoke test de UI contra un Calendar de prueba real.
+  Las citas conservan el contrato existente sin versión/CAS; no se promete protección
+  nueva entre procesos o contra ediciones simultáneas.
+- Siguiente checkpoint recomendado: **protección de conflictos al editar citas**
+  para varios usuarios de oficina. No iniciado; coordinar contratos con el compañero.
+
+## Product/UX — aceptación aislada de reglas de voz — 24 de septiembre de 2026
+
+- `1184fff` se conserva. Siete conversaciones de audio sintético con Realtime real
+  verifican precios/permisos, overrides, idioma, readback y configuración nueva por sesión.
+- Reserva → reprogramación → cancelación local aprobadas sin revelar precios;
+  ninguna cita de esta aceptación queda activa. No se utilizó Google ni telefonía live.
+- `0994bf1` corrige eventos started etiquetados como failed y cierre cuando end_call
+  precede al audio de despedida; fallo de despedida termina como error, sin espera infinita.
+  Cuatro conversaciones posteriores terminaron automáticamente una sola vez.
+- Guía de tools aclara fecha/rango ya soportados; prompt exige hablar en hora local
+  conservando timestamps originales. Sin cambios al motor de agenda o parser.
+- **127 checks focales aprobados**, ambos typechecks y build. Configuración sintética
+  restaurada exactamente; captura deshabilitada; `main`, servicio telefónico y OAuth intactos.
+- **Aceptación del usuario**: las comprobaciones manuales de cadencia, micrófono,
+  barge-in y reinicio/audio son aceptables por ahora; no se afirman nuevas mediciones automáticas.
+  [Matriz PASS / MANUAL REQUIRED, fallos observados y guion exacto](MODEL_CONFIGURATION_VOICE_ACCEPTANCE.md).
+  El usuario autorizó después Appointments Calendar UI; resultado arriba.
+
+## Product/UX — Model Configuration Pipeline — 24 de septiembre de 2026
+
+- **Checkpoint completo** en `codex/product-ux-improvements`; `25eb2f4` y `904dc11`
+  se conservan. Auditoría reutiliza AgentConfiguration v4 y negocio/sucursales v2.
+- AI agent → Business rules expone precios y reserva/cancelación/reprogramación
+  usando los permisos existentes. Precios permitidos por default para conservar
+  comportamiento; al deshabilitarlos, prompt y resultados de herramientas lo aplican.
+- Settings → Locations añade overrides opcionales de acciones, precios, idioma y
+  readback. Herencia por default; una sucursal no puede habilitar permisos denegados
+  por negocio/canal. Disponibilidad conserva las políticas ya implementadas en A/C.
+- Persistencia, validación, tenant/contexto confiable, versiones y conflictos en los
+  mismos APIs; sin nuevo almacén ni cambios a Customer Profiles/Email Notifications.
+- **105 pruebas focales aprobadas (27 nuevas)**, ambos typechecks y build. Browser
+  sintético: guardado/reload, aislamiento entre sucursales, validación, herencia,
+  teclado y ancho móvil. Sin llamada/modelo live, Calendar/OAuth ni telefonía.
+- [Campos/defaults/consumidores, evidencia y límites](MODEL_CONFIGURATION_PIPELINE.md).
+  Aceptación de audio sintético completada después; el usuario aceptó por ahora la
+  parte manual y autorizó Appointments Calendar UI (arriba). Sin merge a main.
+
+## Product/UX — Checkpoint C — 23 de septiembre de 2026
+
+- **Checkpoint C completo**: Availability UI usa sucursal/servicio/profesional,
+  fecha y rango horario local; separa opciones solicitadas y alternativas con fecha/zona.
+- Estados vacío/error/carga, selección explícita, limpieza al cambiar filtros y
+  rechazo de respuestas antiguas. Reserva con la sucursal/instante seleccionados;
+  abre la cita correcta y conserva la revalidación del dominio.
+- Settings expone la política de sugerencias existente (habilitar, 1–14 días,
+  1–5 alternativas) mediante el mismo API, permisos y CAS. Sin motor duplicado.
+- **67 pruebas focales aprobadas (28 nuevas)**, ambos typechecks y build. Browser
+  con datos sintéticos: dos sucursales, reserva/reprogramación/cancelación,
+  persistencia de controles, teclado y ancho móvil verificados.
+- [Alcance, contratos, pruebas y límites](PRODUCT_UX_CHECKPOINT_C.md). Sin cambios
+  de producción, Calendar/OAuth, telefonía, `main` ni rama del compañero.
+- Model Configuration Pipeline se completó después de C; ver el checkpoint superior.
+
+## Product/UX — aceptación A/B — 23 de septiembre de 2026
+
+- **Aceptación A/B completa**: UI de moneda/readback, conflictos entre pestañas,
+  historial móvil/teclado verificados; el usuario confirmó que Voice Lab manual pasó.
+- Corregido el título del editor de moneda a “Display currency”, sin cambiar precios.
+- Evidencia y límites: [aceptación A/B](PRODUCT_UX_AB_ACCEPTANCE.md). Entorno aislado
+  con datos sintéticos/calendario local; no implica aceptación telefónica o despliegue.
+- Checkpoint C — Availability UI autorizado después de este cierre; completado arriba.
+
+## Product/UX — Checkpoint B — 23 de septiembre de 2026
+
+- **Checkpoint B completo** en `codex/product-ux-improvements`; `5e578fe` se conserva.
+- Recent Activity conserva el historial, limita la altura a 14rem y permite inspeccionar
+  entradas antiguas sin desplazamiento forzado; botón para volver a la actividad reciente.
+- Dashboard Test y Voice Lab comparten un ciclo de sesión: finalización idempotente,
+  limpieza de audio/socket/colas/timers y nueva prueba sin recargar ni perder configuración.
+- Cierre automático mediante `end_call` existente y confirmación del navegador de que
+  terminó la reproducción; eventos repetidos/manuales no generan otra respuesta.
+- **96 pruebas focales aprobadas (33 nuevas)**, ambos typechecks y build de producción.
+  Fixture de navegador verificado con 304 entradas, cierre automático/manual y reinicio.
+- Aceptación de micrófono/modelo y UI móvil cerrada; ver [evidencia A/B](PRODUCT_UX_AB_ACCEPTANCE.md) y
+  [alcance, estados, pruebas y riesgos](PRODUCT_UX_CHECKPOINT_B.md).
+- Sin cambios a Asterisk/7001, servicio telefónico, OAuth, Calendar o `main`.
+  Availability UI no se incluyó en B; se completó después como Checkpoint C.
+
+## Product/UX — Checkpoint A — 23 de septiembre de 2026
+
+- Rama separada: `codex/product-ux-improvements`, base `46ce713`.
+- **Checkpoint A completo**: alternativas de disponibilidad configurables por sucursal,
+  lectura de teléfono agrupada/dígito a dígito consumida por el agente y moneda de
+  presentación USD/MXN/EUR sin conversión ni cambios de precios históricos.
+- **136 pruebas focales aprobadas (27 nuevas)**, ambos typechecks y build de producción.
+- Aceptación manual de voz/UI cerrada. Integración con el trabajo del compañero pendiente.
+  Ver [alcance, configuración y resultados](PRODUCT_UX_CHECKPOINT_A.md).
+- Sin cambios de Asterisk/7001, servicio telefónico, OAuth ni `main`. No se inició
+  Checkpoint B dentro de A; B se documenta arriba. El estado de integración siguiente se conserva como checkpoint previo.
+
+## Estado histórico — 22 de septiembre de 2026
+
+- Roadmap de software completo hasta **REL-002** en `codex/integrate-telephony-and-finish`.
+- Auditoría focal de negocio: **482 pruebas aprobadas, 1 live omitida**, ambos typechecks y build; guardia de rutas cubre desactivación.
+- OAuth aislado recuperado desde autorización vigente; verificación corregida para scopes de eventos, 13 pruebas focales aprobadas. Callback nuevo y acceso a Cloud/MFA pendientes: [diagnóstico](GOOGLE_AUTH_DIAGNOSIS.md).
+- **Prueba real todavía bloqueada** por ruta telefónica aislada; operaciones Google reales aún no verificadas. Riesgos de edición simultánea y búsqueda por IDs documentados en [readiness](BUSINESS_TEST_READINESS.md).
+- Próximo paso: **ACCEPT-001 / DEPLOY-001**, operador del entorno objetivo; no equivalen a aceptación de producción ya realizada.
+- Plan de operaciones iniciado en `codex/yibo-business-operations`: auditoría
+  funcional e implementación agrupada completadas; typecheck, 477 pruebas y build
+  de producción aprobados. La aceptación live permanece separada.
+- Ver alcance, evidencia y límites en [auditoría final](RELEASE_CLOSURE_AUDIT.md). Sin merge a main ni despliegue.
+
+### Checkpoint de hardening ya contenido en main — 27 de septiembre de 2026
+
 ## Estado actual — 27 de septiembre de 2026
 
 - `main` contiene la integración de Business Operations y el cierre de bloqueantes de software para release.
@@ -198,8 +583,10 @@ con `pnpm test` y `pnpm build`.
 |---|---|---|
 | CLOSE-001 | DONE | ADR-008, end_call de sesión, guardas de acciones/interrupción y flush RTP final; 465 pruebas y build |
 | CLOSE-002 | DONE | Política de mapping protegida atómicamente por citas no canceladas; histórico/pending/fallos, override/fallback y E2E Google. Ver BOOKED_CALENDAR_ROUTES.md |
-| ACCEPT-001 | TODO | Operador de despliegue: aceptación live y browser con datos de prueba |
-| DEPLOY-001 | TODO | Operador de despliegue: respaldo durable, claves, admins, red y datos objetivo |
+| ACCEPT-001 | IN_PROGRESS | Browser sintético aprobado; usuario reporta 7001 funcional; faltan variantes live detalladas antes del piloto |
+| DEPLOY-001 | IN_PROGRESS | Preparación y restore sintético verificados; pendientes host separado, dominios, backup/restore off-host y aceptación desplegada |
+| RISK-001 | DONE | Revisiones + guardia SQLite compartida, relectura bajo lock, conflictos UI/voz, dos procesos/fallos/identidad; 679 pruebas, 1 live omitida; APPOINTMENT_EDIT_PROTECTION.md |
+| RISK-002 | TODO | Producto/secretaría: validar flujo por IDs y necesidad de agenda/búsqueda antes de uso diario; BUSINESS_TEST_READINESS.md |
 
 ## Plan de operaciones del negocio
 

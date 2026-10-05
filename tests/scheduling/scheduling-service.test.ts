@@ -6,7 +6,7 @@ import {
   type BusinessProfile,
   type VersionedBusinessProfile,
 } from "../../src/modules/business/index.js";
-import { success } from "../../src/shared/domain/result.js";
+import { failure, success } from "../../src/shared/domain/result.js";
 import { SchedulingServiceImpl, type CalendarPort, type ConfirmedAppointmentReader, type EmployeeWorkingHoursProvider } from "../../src/modules/scheduling/index.js";
 
 const business: BusinessProfile = {
@@ -195,5 +195,80 @@ describe("SchedulingService", () => {
       employeeId: "dr-lee", startAt: "2026-08-10T16:00:00.000Z",
     });
     expect(available.ok).toBe(true);
+  });
+});
+
+describe("Checkpoint A availability suggestions", () => {
+  const query = { tenantId: business.tenantId, locationId: "default", serviceId: "cleaning", rangeStart: "2026-08-10T16:00:00.000Z", rangeEnd: "2026-08-10T16:30:00.000Z" };
+  const configured = (enabled = true, expansionDays = 1, maximumAlternatives = 3) => {
+    const profile = upgradeBusinessProfile(business);
+    profile.locations[0]!.policies.availabilitySuggestions = { enabled, expansionDays, maximumAlternatives };
+    return profile;
+  };
+  it("leaves omitted and disabled policies with exact-range results", async () => {
+    const previous = await createService().findAvailableSlots(query);
+    expect(previous.ok && previous.value).toHaveLength(1);
+    expect(await createService(noAppointments, noCalendarConflicts, workingHours, configured(false)).findAvailableSlots(query)).toEqual(previous);
+  });
+  it("keeps the preferred slot first and labels capped, verified alternatives", async () => {
+    const result = await createService(noAppointments, noCalendarConflicts, workingHours, configured()).findAvailableSlots(query);
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    expect(result.value).toHaveLength(4);
+    expect(result.value[0]).toMatchObject({ startAt: query.rangeStart });
+    expect(result.value[0]).not.toHaveProperty("outsideRequestedRange");
+    expect(result.value.slice(1).every(s => s.outsideRequestedRange && s.startAt >= query.rangeEnd)).toBe(true);
+    expect(new Set(result.value.map(s => `${s.employeeId}:${s.startAt}`)).size).toBe(4);
+  });
+  it("expands an empty requested range only as far as configured", async () => {
+    const empty = { ...query, rangeStart: "2026-08-09T16:00:00.000Z", rangeEnd: "2026-08-09T17:00:00.000Z" };
+    const result = await createService(noAppointments, noCalendarConflicts, workingHours, configured(true, 1, 2)).findAvailableSlots(empty);
+    expect(result.ok && result.value).toHaveLength(2);
+    if (result.ok) expect(result.value.every(s => s.outsideRequestedRange && s.endAt <= "2026-08-10T17:00:00.000Z")).toBe(true);
+    const beforeClosedDays = { ...query, rangeStart: "2026-08-11T16:00:00Z", rangeEnd: "2026-08-11T17:00:00Z" };
+    expect(await createService(noAppointments, noCalendarConflicts, workingHours, configured()).findAvailableSlots(beforeClosedDays)).toEqual({ ok: true, value: [] });
+  });
+  it("does not expand when enough preferred options exist or limit is zero", async () => {
+    const service = createService(noAppointments, noCalendarConflicts, workingHours, configured(true, 1, 1));
+    expect(await service.findAvailableSlots(query)).toEqual(await createService().findAvailableSlots(query));
+    expect(await service.findAvailableSlots({ ...query, limit: 0 })).toEqual({ ok: true, value: [] });
+  });
+  it("never offers conflicting alternative times", async () => {
+    const calendar: CalendarPort = { getBusyIntervals: async () => success([{ startAt: "2026-08-10T16:30:00Z", endAt: "2026-08-10T18:00:00Z" }]) };
+    const result = await createService(noAppointments, calendar, workingHours, configured()).findAvailableSlots(query);
+    expect(result.ok && result.value).toHaveLength(1);
+  });
+  it("preserves tenant isolation and booking horizon for expansion", async () => {
+    const profile = configured(); profile.locations[0]!.policies.maximumBookingHorizonDays = 1;
+    const service = createService(noAppointments, noCalendarConflicts, workingHours, profile);
+    expect(await service.findAvailableSlots(query)).toEqual({ ok: true, value: [] });
+    expect((await service.findAvailableSlots({ ...query, tenantId: "other-tenant" })).ok).toBe(false);
+  });
+  it("surfaces Calendar failures during expansion instead of inventing alternatives", async () => {
+    let reads = 0;
+    const calendar: CalendarPort = { getBusyIntervals: async () => ++reads === 1
+      ? success([]) : failure({ code: "PROVIDER_UNAVAILABLE", retryable: true }) };
+    const result = await createService(noAppointments, calendar, workingHours, configured()).findAvailableSlots(query);
+    expect(result).toEqual({ ok: false, error: { code: "EXTERNAL_CALENDAR_UNAVAILABLE", retryable: true } });
+  });
+  it("does not offer or accept a disabled professional", async () => {
+    const inactiveProfessional = upgradeBusinessProfile(structuredClone(business));
+    inactiveProfessional.professionals[0]!.active = false;
+    inactiveProfessional.locations[0]!.professionals[0]!.active = false;
+    const inactiveAssignment = upgradeBusinessProfile(structuredClone(business));
+    inactiveAssignment.locations[0]!.professionals[0]!.active = false;
+    const query = {
+      tenantId: business.tenantId, locationId: "default", serviceId: "cleaning",
+      rangeStart: "2026-08-10T00:00:00.000Z", rangeEnd: "2026-08-11T00:00:00.000Z",
+    };
+    const slot = { ...query, employeeId: "dr-lee", startAt: "2026-08-10T16:30:00.000Z" };
+    for (const profile of [inactiveProfessional, inactiveAssignment]) {
+      const service = createService(noAppointments, noCalendarConflicts, workingHours, profile);
+      expect(await service.findAvailableSlots(query)).toEqual({ ok: false, error: { code: "EMPLOYEE_UNAVAILABLE" } });
+      expect(await service.validateSlot(slot)).toEqual({ ok: false, error: { code: "EMPLOYEE_NOT_FOUND" } });
+    }
+  });
+  it("rejects malformed expansion settings before scheduling", () => {
+    expect(() => createService(noAppointments, noCalendarConflicts, workingHours, configured(true, 100))).toThrow();
+    expect(() => createService(noAppointments, noCalendarConflicts, workingHours, configured(true, 1, 0))).toThrow();
   });
 });

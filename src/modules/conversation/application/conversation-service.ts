@@ -1,3 +1,4 @@
+import { markCallEnded, isCallEnded } from "../../calls/application/call-liveness.js";
 import { ConversationMetrics } from "../../../shared/observability/conversation-metrics.js";
 import { withOperationalContext } from "../../../shared/observability/operational-log.js";
 import type { AgentToolResult } from "../../agents/index.js";
@@ -25,11 +26,11 @@ export class ConversationService implements ConversationServiceContract {
     const runtimeSession = await withOperationalContext(command.agent.trustedContext, () => this.dependencies.runtime.openSession({
       conversationId: command.conversationId,
       agent: {
-        instructions: command.agent.instructions + (canEnd ? "\nThe end_call tool is available only for clean phone completion. After a confirmed booking, first state the clinic-local time and professional and offer the location address. When the caller says they need nothing else, speak one concise final farewell, then invoke end_call with {} in the same response. Do not call it before completing requested actions and stating their actual results. Do not ask another question after saying goodbye. If the caller interrupts, continue helping; end_call never confirms a booking." : ""),
+        instructions: command.agent.instructions + (canEnd ? "\nWhen the caller is finished, speak one concise final farewell, then invoke end_call with {}. If end_call returns farewellRequired, speak that farewell in your next response without calling another tool or asking another question. Do not call it before completing requested actions and stating their actual results. Do not ask another question after saying goodbye. If the caller interrupts, continue helping; end_call never confirms a booking." : ""),
         locale: command.agent.locale,
         ...(command.agent.voice ? { voice: command.agent.voice } : {}),
         tools: [...command.agent.tools, ...(canEnd ? [{ name: "end_call" as const,
-          description: "End this phone conversation after your final farewell audio in this response has played. Use only when the caller is finished and all requested actions have resolved. No arguments; never claims booking success.",
+          description: "Request conversation completion after final farewell audio has played. If the result requests a farewell, speak it once in your next response. Use only when the caller is finished and all requested actions have resolved. No arguments; never claims booking success.",
           inputSchema: { type: "object", additionalProperties: false, properties: {} },
         }] : [])],
         conversation: structuredClone(command.agent.conversation),
@@ -72,7 +73,7 @@ class ActiveConversationSession implements ConversationSession {
   private lastAudioTurn?: string;
   private audioComplete = false;
   private playbackIdle = false;
-  private ending?: { flushed: boolean; acknowledged: boolean; response: number; turn: string; deadline: ReturnType<typeof setTimeout> };
+  private ending?: { flushed: boolean; acknowledged: boolean; response: number; turn?: string; deadline: ReturnType<typeof setTimeout> };
   private endTail?: ReturnType<typeof setTimeout>;
   private mutationPending = false;
   private mutationUncertain = false;
@@ -104,6 +105,7 @@ class ActiveConversationSession implements ConversationSession {
   }
 
   close(): Promise<void> {
+    markCallEnded(this.dependencies.command.agent.trustedContext.callId);
     if (!this.closePromise) {
       this.closePromise = this.closeResources();
     }
@@ -146,7 +148,8 @@ class ActiveConversationSession implements ConversationSession {
       case "audio.delta":
         if (event.assistantTurnId === this.interruptedTurnId) return;
         this.interruptedTurnId = undefined;
-        if (this.ending && this.ending.turn !== event.assistantTurnId) this.cancelCallEnd();
+        if (this.ending && !this.ending.turn && this.ending.response === this.responseSequence) this.ending.turn = event.assistantTurnId;
+        else if (this.ending && this.ending.turn !== event.assistantTurnId) this.cancelCallEnd();
         this.lastAudioTurn = event.assistantTurnId;
         this.audioComplete = false;
         this.playbackIdle = false;
@@ -178,13 +181,20 @@ class ActiveConversationSession implements ConversationSession {
         await this.close();
         return;
       case "assistant.response_created":
-        this.cancelCallEnd();
         this.responseSequence += 1;
+        // A function-only end_call response needs one following farewell response.
+        if (this.ending?.response !== this.responseSequence || this.ending.turn) this.cancelCallEnd();
         this.responseComplete = false;
         this.lastAudioTurn = undefined;
         this.audioComplete = false;
         return;
       case "assistant.response_done":
+        if (event.status === "failed" && this.ending) {
+          const error = { code: "RUNTIME_ERROR" as const, message: "The final farewell response failed", retryable: false };
+          this.observe({ type: "error", ...error });
+          await this.fail(error);
+          return;
+        }
         if (event.status !== "completed") { this.cancelCallEnd(); this.lastAudioTurn = undefined; this.responseComplete = false; return; }
         this.responseComplete = true;
         this.checkCallEnd();
@@ -226,7 +236,7 @@ class ActiveConversationSession implements ConversationSession {
   }
 
   private async executeTool(event: Extract<ConversationRuntimeEvent, { type: "tool.call" }> & { name: import("../../agents/index.js").AgentToolName }): Promise<void> {
-    if (this.toolCalls.has(event.toolCallId) || this.closePromise) return;
+    if (this.toolCalls.has(event.toolCallId) || this.closePromise || isCallEnded(this.dependencies.command.agent.trustedContext.callId)) return;
     this.cancelCallEnd();
     this.lastAudioTurn = undefined;
     this.activeTools += 1;
@@ -266,17 +276,21 @@ class ActiveConversationSession implements ConversationSession {
     const valid = typeof event.arguments === "object" && event.arguments !== null
       && !Array.isArray(event.arguments) && Object.keys(event.arguments).length === 0;
     const accepted = supportsCallEnd(this.dependencies.command) && valid && !this.activeTools
-      && !this.mutationUncertain && !!this.lastAudioTurn;
+      && !this.mutationUncertain;
+    const requestFarewell = accepted && !this.ending && !this.lastAudioTurn;
     if (accepted && !this.ending) {
-      this.ending = { flushed: false, acknowledged: false, response: this.responseSequence, turn: this.lastAudioTurn!,
+      this.ending = { flushed: false, acknowledged: false, response: this.responseSequence + (requestFarewell ? 1 : 0),
+        ...(this.lastAudioTurn ? { turn: this.lastAudioTurn } : {}),
         deadline: setTimeout(() => { void this.fail({ code: "AUDIO_TRANSPORT_ERROR", message: "Final response playback did not complete" }); }, 45_000) };
     }
     const end = this.ending;
     try {
       await this.bounded(this.dependencies.runtimeSession.sendToolResult(accepted
-        ? { toolCallId: event.toolCallId, ok: true, data: { ending: true } }
+        ? { toolCallId: event.toolCallId, ok: true, data: { ending: true, ...(requestFarewell ? {
+          farewellRequired: true, message: "Speak one concise farewell now. Do not ask a question or call another tool. The session will close after your audio finishes; this does not confirm any appointment action.",
+        } : {}) } }
         : { toolCallId: event.toolCallId, ok: false, error: { code: "CALL_END_NOT_READY", message: "Continue assisting. Resolve pending actions and speak a final farewell before requesting call end. Never claim uncertain actions succeeded.", retryable: false } },
-        { requestResponse: !accepted && !end }), 5_000);
+        { requestResponse: requestFarewell || (!accepted && !end) }), 5_000);
       if (accepted && end && this.ending === end) end.acknowledged = true;
       this.checkCallEnd();
     } catch { if (!this.closePromise) await this.fail({ code: "TOOL_EXECUTION_ERROR", message: "Call-end result delivery failed" }); }
@@ -284,7 +298,7 @@ class ActiveConversationSession implements ConversationSession {
 
   private checkCallEnd(): void {
     const end = this.ending;
-    if (!end || !end.acknowledged || end.response !== this.responseSequence || end.turn !== this.lastAudioTurn
+    if (!end || !end.turn || !end.acknowledged || end.response !== this.responseSequence || end.turn !== this.lastAudioTurn
       || !this.responseComplete || !this.audioComplete || this.activeTools
       || this.mutationUncertain || this.closePromise || this.completionSettled) return;
     if (!end.flushed) {
@@ -382,6 +396,6 @@ const errorMessage = (error: unknown): string => error instanceof Error ? error.
 
 class CallDeadlineError extends Error {}
 
-const supportsCallEnd = (command: StartConversationCommand): boolean => command.agent.channel === "phone"
+const supportsCallEnd = (command: StartConversationCommand): boolean => (command.agent.channel === "phone" || command.agent.channel === "voice_lab")
   && command.agent.toolChoice !== "none" && !command.agent.parallelToolCalls
   && typeof command.transport.outboundAudio.onPlaybackIdle === "function";

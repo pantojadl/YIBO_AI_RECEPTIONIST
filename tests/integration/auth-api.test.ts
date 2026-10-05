@@ -135,6 +135,51 @@ describe("admin authentication API", () => {
     expect(response.json()).toEqual({ error: { code: "TENANT_ACCESS_DENIED" } });
   });
 
+  it("does not return a booked appointment to a session from another business", async () => {
+    const app = buildApplication({
+      clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
+      adminSessionSecret: "a-development-test-secret-that-is-long-enough",
+    });
+    server = await createApiServer(app);
+    const operator = await createAdminTestSession(app, server, ["operator"]);
+    const customer = await server.inject({
+      method: "POST", url: "/api/customers", headers: operator.mutationHeaders,
+      payload: { phone: "+15555550123", name: "Owner Patient" },
+    });
+    expect(customer.statusCode).toBe(200);
+    const availability = await server.inject({
+      method: "GET",
+      url: "/api/availability?serviceId=consultation&employeeId=employee-1&rangeStart=2026-08-10T00%3A00%3A00.000Z&rangeEnd=2026-08-11T00%3A00%3A00.000Z",
+      headers: operator.readHeaders,
+    });
+    const slot = availability.json<{ slots: Array<{ startAt: string; employeeId: string }> }>().slots[0];
+    if (!slot) throw new Error("Expected an available slot");
+    const booked = await server.inject({
+      method: "POST", url: "/api/appointments",
+      headers: { ...operator.mutationHeaders, "idempotency-key": "tenant-a-book" },
+      payload: {
+        customerId: customer.json<{ id: string }>().id,
+        serviceId: "consultation",
+        employeeId: slot.employeeId,
+        startAt: slot.startAt,
+      },
+    });
+    expect(booked.statusCode).toBe(201);
+    const appointmentId = booked.json<{ id: string }>().id;
+    const now = new Date();
+    const foreign = await app.adminAuth.sessions.issue({
+      subject: "other-admin", tenantId: "tenant-other", roles: ["operator"], now,
+      expiresAt: new Date(now.valueOf() + 60_000),
+    });
+    const response = await server.inject({
+      method: "GET", url: `/api/appointments/${appointmentId}`,
+      headers: { cookie: `yibo_admin_session=${encodeURIComponent(foreign)}` },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: { code: "TENANT_ACCESS_DENIED" } });
+    expect(JSON.stringify(response.json())).not.toContain(appointmentId);
+  });
+
   it("enforces tenant-admin configuration and operator workflow permissions", async () => {
     const app = buildApplication();
     server = await createApiServer(app);

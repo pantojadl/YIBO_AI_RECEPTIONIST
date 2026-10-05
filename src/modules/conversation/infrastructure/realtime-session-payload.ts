@@ -23,8 +23,8 @@ export function buildRealtimeSessionUpdate(
     throw new Error("Developer Test Mode tools require an authorized Voice Lab session");
   }
   if (agent.tools.some(tool => tool.name === "end_call")
-    && (agent.channel !== "phone" || agent.parallelToolCalls || agent.toolChoice === "none")) {
-    throw new Error("Call completion requires a serial phone session with tools enabled");
+    && ((agent.channel !== "phone" && agent.channel !== "voice_lab") || agent.parallelToolCalls || agent.toolChoice === "none")) {
+    throw new Error("Call completion requires a serial phone or Voice Lab session with tools enabled");
   }
   capabilities.validateRuntimeOptions({ ...agent,
     tools: agent.tools.filter((tool): tool is AgentToolDefinition => tool.name !== "end_call"),

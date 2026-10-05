@@ -71,6 +71,20 @@ describe("local API flow", () => {
     const appointment = appointmentResponse.json<{ id: string; status: string }>();
     expect(appointment.status).toBe("CONFIRMED");
 
+    const replay = await server.inject({
+      method: "POST",
+      url: "/api/appointments",
+      headers: { ...session.mutationHeaders, "idempotency-key": "api-flow-1" },
+      payload: {
+        customerId: customer.id,
+        serviceId: "consultation",
+        employeeId: selected.employeeId,
+        startAt: selected.startAt,
+      },
+    });
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toMatchObject({ id: appointment.id, status: "CONFIRMED" });
+
     const refreshed = await server.inject({ method: "GET", url: availabilityUrl, headers: session.readHeaders });
     expect(refreshed.json<{ slots: Array<{ startAt: string }> }>().slots)
       .not.toContainEqual(expect.objectContaining({ startAt: selected.startAt }));

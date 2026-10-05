@@ -17,6 +17,8 @@ export type AppointmentStatus =
   | "FAILED";
 
 export interface Appointment {
+  /** Persisted edit revision. Older/custom repository records start at 1. */
+  version?: number;
   id: AppointmentId;
   tenantId: TenantId;
   locationId: LocationId;

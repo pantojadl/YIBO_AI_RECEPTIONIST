@@ -203,3 +203,23 @@ describe("catalog prices use exact integer minor units", () => {
     expect(() => parsePrice(amount!, currency!)).toThrow();
   });
 });
+
+describe("Checkpoint A default display currency", () => {
+  it.each(["USD", "MXN", "EUR"] as const)("persists %s through the versioned admin API without changing existing prices", async currency => {
+    const { editor, requests } = await fixture();
+    const before = copyCatalogValue(editor.state.document!);
+    expect(await editor.saveDisplayCurrency(currency)).toBe(true);
+    expect(editor.state.document!.configuration.displayCurrency).toBe(currency);
+    expect(editor.state.document!.configuration.locations).toEqual(before.configuration.locations);
+    expect(editor.state.document!.version).toBe(before.version + 1);
+    expect(requests.at(-1)!.headers["if-match"]).toBe(`"${before.version}"`);
+    await editor.load(); expect(editor.state.document!.configuration.displayCurrency).toBe(currency);
+  });
+  it("rejects unsupported currencies and operator writes", async () => {
+    const { editor } = await fixture();
+    expect(await editor.saveDisplayCurrency("CAD" as "USD")).toBe(false);
+    await server!.close();
+    const operator = await fixture(["operator"]);
+    expect(await operator.editor.saveDisplayCurrency("EUR")).toBe(false);
+  });
+});

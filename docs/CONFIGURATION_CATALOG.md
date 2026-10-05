@@ -61,8 +61,8 @@ phone-checkout settings into application configuration without checking ownershi
 
 | Owner | Controls |
 |---|---|
-| Agent, schema/defaults v4 | Instructions, model/voice/VAD, behavior, tool/channel policy, confirmation gates, limits/retries/escalation. Saved per tenant; next conversation reads it. |
-| Business, schema v2 | Active locations, DIDs, IANA zones, catalog, prices, professional/service assignments, hours/closures, booking policy and transfer destinations. |
+| Agent, schema/defaults v4 | Instructions, model/voice/VAD, behavior (including price disclosure, default true), tool/channel policy, confirmation gates, limits/retries/escalation. Saved per tenant; next conversation reads it. |
+| Business, schema v2 | Active locations, DIDs, IANA zones, catalog, prices, professional/service assignments, hours/closures, booking policy, transfer destinations and optional location agent overrides (action restrictions, price disclosure, language, phone readback). |
 | Calendar assignments | Professional override and location fallback; resolved from trusted call/location context. |
 | Location operations | Same-day booking, cancellation/rescheduling, staff override, structured AI capabilities and after-hours behavior. |
 
@@ -70,3 +70,10 @@ Business writes use numeric version `If-Match`; agent writes use an opaque revis
 `If-Match`. Schema version is not an edit revision. Defaults are defined in
 `agent-configuration-defaults.ts`, not provider JSON or environment tuning after save.
 PCM16 mono 24 kHz inside YIBO and PCMU 8 kHz at RTP are transport invariants.
+
+See [Model Configuration Pipeline](MODEL_CONFIGURATION_PIPELINE.md) for every
+added field/default/supported value, existing behavior controls, UI locations,
+runtime consumers and the Customer Profiles/Notifications integration boundary.
+Location overrides inherit when absent and cannot grant an action or price access
+denied by the business/channel. They apply to new conversations; existing location
+availability policies remain the scheduling source of truth.

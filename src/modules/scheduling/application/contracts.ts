@@ -29,6 +29,8 @@ export interface ValidateSlotQuery {
 }
 
 export interface AvailableSlot {
+  /** Only expanded results carry this marker; the requested range remains unchanged. */
+  outsideRequestedRange?: true;
   employeeId: EmployeeId;
   startAt: string;
   endAt: string;

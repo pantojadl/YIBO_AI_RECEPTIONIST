@@ -14,6 +14,11 @@ export interface CustomerReader {
   get(tenantId: TenantId, customerId: CustomerId): Promise<{ name?: string; phone: string } | null>;
 }
 
+/** A durable guard rejects busy locations instead of waiting on an unbounded external call. */
+export class AppointmentOperationInProgressError extends Error {
+  constructor() { super("An appointment operation is already in progress at this location."); }
+}
+
 export interface AppointmentConcurrencyGuard {
   execute<T>(tenantId: TenantId, locationId: LocationId, employeeId: EmployeeId, operation: () => Promise<T>): Promise<T>;
 }

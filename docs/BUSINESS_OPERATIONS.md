@@ -27,9 +27,11 @@ tenant sin un límite de búsqueda, permite filtrar por nombre/contacto o profes
 muestra el equipo de atención inferido de las citas y abre la historia completa. El
 panel lateral **Doctors & patients** incluye también profesionales sin pacientes.
 
-La vista **Availability** consulta el mismo servicio de Scheduling para todos los
+La vista **Team availability** consulta el mismo servicio de Scheduling para todos los
 profesionales asignados al servicio y presenta sus huecos en paralelo. Elegir un
 paciente en Customers permite reservar directamente desde uno de esos huecos.
+**Availability** conserva la búsqueda Product/UX por rango con alternativas
+identificadas; **Appointments** conserva su calendario y detalle de cita.
 
 ## Ciclo de vida de una cita
 
@@ -45,7 +47,8 @@ instante UTC sin reinterpretarlo al ejecutar la mutación.
 
 Antes de reservar para un caller real, el backend exige que `update_customer`
 haya guardado en esa misma llamada el nombre completo y el teléfono confirmado.
-El agente repite el número dígito por dígito antes de guardarlo. Tras una reserva
+El agente usa el readback configurado (agrupado o dígito por dígito) antes de
+guardarlo. El formato no cambia el teléfono normalizado persistido. Tras una reserva
 exitosa informa la hora local y el profesional; ofrece la dirección sólo si la
 sucursal tiene una dirección real configurada. Cuando el caller confirma que no
 necesita más ayuda, la despedida usa `end_call` y espera a que termine el audio
@@ -67,7 +70,15 @@ cada sucursal controla reserva el mismo día, cancelación, reprogramación y ov
 de personal. Las capacidades del agente permiten activar o desactivar reserva,
 cambios, cancelación, precios, descripciones, alternativas, captura de contacto,
 correo, transferencia y conducta fuera de horario. El backend vuelve a aplicar las
-reglas; el prompt no es una frontera de autorización.
+reglas de mutación y permisos de herramientas; el prompt no es una frontera de
+autorización. Las restricciones Product/UX de negocio/canal y `agentOverrides`
+se combinan con `aiCapabilities`: cualquier denegación de acción o precios gana.
+
+Límites auditados del candidato: `staffOverrideAllowed` es metadato; todavía no
+hay operación de bypass de reglas. `afterHoursBehavior` orienta al prompt, no es
+un nuevo permiso de dominio. `sameDayBooking` se valida al crear; disponibilidad
+y reprogramación no aplican todavía esa opción. Estos controles no deben
+interpretarse como protecciones adicionales que el runtime no implementa.
 
 ## Roles
 

@@ -79,3 +79,41 @@ describe("configuration guards for booked routes", () => {
       .toMatchObject({ ok: false, error: { code: "CONFIGURATION_VERSION_CONFLICT", currentVersion: 1 } });
   });
 });
+
+describe("booked route activation safety", () => {
+  it.each(["business", "location", "assignment"] as const)("blocks disabling the %s while a booking needs its route", async scope => {
+    const { app } = await fixture();
+    const current = await app.business.getBusinessConfiguration(app.tenantId);
+    if (!current.ok) throw new Error("Missing configuration");
+    const candidate = structuredClone(current.value.configuration);
+    if (scope === "business") candidate.active = false;
+    if (scope === "location") {
+      candidate.locations.push({ ...structuredClone(candidate.locations[0]!), id: "other", calledNumbers: ["+12025550188"] });
+      candidate.locations[0]!.active = false;
+      candidate.locations[0]!.calledNumbers = [];
+    }
+    if (scope === "assignment") candidate.locations[0]!.professionals[0]!.active = false;
+    expect(await app.business.updateBusinessConfiguration(app.tenantId, candidate, 1)).toEqual(blocked);
+    expect(await app.business.getBusinessConfiguration(app.tenantId)).toMatchObject({ ok: true, value: { version: 1 } });
+  });
+  it("allows location deactivation after its bookings are cancelled", async () => {
+    const { app } = await fixture("CANCELLED");
+    const current = await app.business.getBusinessConfiguration(app.tenantId);
+    if (!current.ok) throw new Error("Missing configuration");
+    current.value.configuration.locations.push({ ...structuredClone(current.value.configuration.locations[0]!), id: "other", calledNumbers: ["+12025550188"] });
+    current.value.configuration.locations[0]!.active = false;
+    current.value.configuration.locations[0]!.calledNumbers = [];
+    expect(await app.business.updateBusinessConfiguration(app.tenantId, current.value.configuration, 1)).toMatchObject({ ok: true });
+  });
+});
+
+it("allows restoring access to an already-disabled route without changing its calendar", async () => {
+  const { app, appointments, appointment } = await fixture("CANCELLED");
+  const current = await app.business.getBusinessConfiguration(app.tenantId);
+  if (!current.ok) throw new Error("Missing configuration");
+  current.value.configuration.active = false;
+  expect(await app.business.updateBusinessConfiguration(app.tenantId, current.value.configuration, 1)).toMatchObject({ ok: true });
+  await appointments.save({ ...appointment, status: "CONFIRMED" });
+  current.value.configuration.active = true;
+  expect(await app.business.updateBusinessConfiguration(app.tenantId, current.value.configuration, 2)).toMatchObject({ ok: true });
+});

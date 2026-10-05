@@ -5,6 +5,13 @@ The form covers name, active state, address, IANA time zone, locale, incoming ph
 numbers, split weekly hours, local closures with administrative reasons, all
 existing booking policy fields, and the human-transfer phone/extension.
 
+Product Checkpoint C adds **Availability suggestions** to this same editor:
+enabled (default off), search ahead (1–14 days, default 1), and maximum alternative
+options (1–5, default 3). These edit the existing per-location policy consumed by
+the agent and availability API, preserving validation and version/conflict checks.
+The Availability screen's settings shortcut opens its selected location.
+See [Checkpoint C](PRODUCT_UX_CHECKPOINT_C.md) for subsequent browser/test evidence.
+
 New locations start inactive and copy the selected location's service offerings
 and policies. They receive a new ID and do not copy phone numbers, professionals,
 or calendar routes. Complete their assignments before activating them. Catalog

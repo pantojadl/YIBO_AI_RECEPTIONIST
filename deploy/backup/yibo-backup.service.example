@@ -1,0 +1,32 @@
+# TEMPLATE ONLY. Do not install on the working Asterisk VPS.
+[Unit]
+Description=YIBO consistent regional backup and encrypted off-host upload
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/yibo/backup.env
+
+[Service]
+Type=oneshot
+User=yibo-api
+Group=yibo-api
+WorkingDirectory=/opt/yibo/current
+EnvironmentFile=/etc/yibo/backup.env
+Environment=PATH=/usr/bin:/bin
+Environment=DOTENV_CONFIG_PATH=/dev/null
+ExecStart=/bin/sh /opt/yibo/current/deploy/backup/run-backup.sh
+TimeoutStartSec=10min
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=yibo-backups
+StateDirectoryMode=0700
+CacheDirectory=yibo-restic
+CacheDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# Read-only SQLite connections can still need access to the source's WAL index.
+ReadWritePaths=/var/lib/yibo /var/lib/yibo-backups /var/cache/yibo-restic
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

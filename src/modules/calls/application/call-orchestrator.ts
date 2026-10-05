@@ -1,4 +1,5 @@
 import { operationalLog } from "../../../shared/observability/operational-log.js";
+import { markCallEnded } from "./call-liveness.js";
 import type { BusinessDirectory } from "../../business/index.js";
 import type { AgentDefinitionFactory } from "../../agents/index.js";
 import type {
@@ -124,6 +125,7 @@ export class CallOrchestratorService implements CallOrchestrator {
   }
 
   private async shutdown(callId: string, occurredAt: string): Promise<void> {
+    markCallEnded(callId);
     const record = await this.calls.findByCallId(callId);
     if (!record) return;
     operationalLog("call.hangup", {}, record);

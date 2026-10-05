@@ -7,6 +7,17 @@ import {
 const emptyAudio = async function* () {};
 
 describe("ScriptedVoiceMediaGateway", () => {
+  it("releases a completed test's media without releasing a replacement registration", async () => {
+    const gateway = new ScriptedVoiceMediaGateway();
+    const first: ConversationTransport = { inboundAudio: emptyAudio(), outboundAudio: { write: vi.fn() }, close: vi.fn() };
+    const second = { ...first };
+    const releaseFirst = gateway.register("test", first);
+    const releaseSecond = gateway.register("test", second);
+    releaseFirst();
+    await expect(gateway.open("test")).resolves.toMatchObject({ ok: true, value: second });
+    releaseSecond(); releaseSecond();
+    await expect(gateway.open("test")).resolves.toMatchObject({ ok: false, error: { code: "MEDIA_NOT_AVAILABLE" } });
+  });
   it("exposes registered call media without owning a conversation runtime", async () => {
     const gateway = new ScriptedVoiceMediaGateway();
     const transport: ConversationTransport = {
