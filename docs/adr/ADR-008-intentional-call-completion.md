@@ -30,3 +30,12 @@ business mutation after end has been requested. Hard deadlines are safety bounds
 not duplicate provider controls. Tests must cover early/late drain, interruptions,
 pending/uncertain tools, duplicate events, provider response failure, caller hangup,
 and no extra response.create after a successful end acknowledgment.
+
+## Amendment — Product/UX Checkpoint B, 2026-09-23
+
+The browser harness now implements the playback-idle/finishAudio contract. Voice Lab
+sessions with enabled, serial tools reuse this completion capability, including the
+Realtime payload eligibility check. The browser acknowledges a matching finish request
+only after its playback queue drains; terminal events and manual stop share one
+idempotent test finalizer. No change is made to the phone condition, business mutations,
+ARI/RTP behavior or routing. See [Checkpoint B](../PRODUCT_UX_CHECKPOINT_B.md).

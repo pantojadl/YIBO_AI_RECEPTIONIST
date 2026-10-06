@@ -7,9 +7,10 @@ import AgentConfigurationPanel from "./components/AgentConfigurationPanel.vue";
 import AgentVoiceLab from "./components/AgentVoiceLab.vue";
 import AdminLogin from "./components/AdminLogin.vue";
 import LocationSettings from "./components/LocationSettings.vue";
-import AppointmentAdministration from "./components/AppointmentAdministration.vue";
+import AppointmentCalendar from "./components/AppointmentCalendar.vue";
 import CalendarSettings from "./components/CalendarSettings.vue";
 import CatalogSettings from "./components/CatalogSettings.vue";
+import AvailabilitySearch from "./components/AvailabilitySearch.vue";
 import OfficeWorkspace from "./components/OfficeWorkspace.vue";
 import CustomerDirectory from "./components/CustomerDirectory.vue";
 import AvailabilityBoard from "./components/AvailabilityBoard.vue";
@@ -18,10 +19,11 @@ import { createUnsavedChanges, unsavedChangesKey } from "./services/unsaved-chan
 const leaveGuard = createUnsavedChanges(message => window.confirm(message), message => window.alert(message));
 provide(unsavedChangesKey, leaveGuard);
 
-type Section = "office" | "overview" | "agent" | "customers" | "availability" | "appointments" | "settings" | "catalog" | "calendars";
+type Section = "office" | "overview" | "agent" | "customers" | "availability" | "team-availability" | "appointments" | "settings" | "catalog" | "calendars";
 const section = ref<Section>("office");
 const adminSession = createAdminSession();
 const auth = adminSession.state;
+const readOnly = computed(() => auth.principal?.roles.includes("read_only") ?? false);
 const previewVisible = ref(false);
 async function showVoicePreview(): Promise<void> {
   previewVisible.value = true;
@@ -36,6 +38,7 @@ const globalError = ref("");
 const busy = ref(false);
 const customer = ref<Customer>();
 const createdAppointment = ref<Appointment>();
+const settingsLocationId = ref("");
 leaveGuard.register({ dirty: () => false, busy: () => busy.value });
 
 // The dashboard is intentionally English even if an older business profile has a Spanish locale.
@@ -43,7 +46,7 @@ const locale = computed(() => "en-US" as const);
 const copy = computed(() => messages[locale.value]);
 const navItems = computed(() => ([
   ["office", "Office schedule"], ["overview", copy.value.overview], ["agent", copy.value.agent], ["customers", copy.value.customers],
-  ["availability", copy.value.availability], ["appointments", copy.value.appointments], ["settings", "Settings"], ["catalog", "Services & professionals"], ["calendars", "Calendar mappings"],
+  ["availability", copy.value.availability], ["team-availability", "Team availability"], ["appointments", copy.value.appointments], ["settings", "Settings"], ["catalog", "Services & professionals"], ["calendars", "Calendar mappings"],
 ] as Array<[Section, string]>).filter(([candidate]) => canAccessSection(candidate)));
 const t = (key: MessageKey): string => copy.value[key];
 
@@ -88,8 +91,9 @@ function canAccessSection(candidate: Section): boolean {
   return !["agent", "settings", "catalog", "calendars"].includes(candidate) || adminSession.can("tenant_admin");
 }
 
-function chooseSection(value: Section): void {
+function chooseSection(value: Section, locationId = ""): void {
   if (value === section.value || !canAccessSection(value) || !leaveGuard.allowLeave()) return;
+  if (value === "settings") settingsLocationId.value = locationId;
   section.value = value;
   globalError.value = "";
 }
@@ -116,7 +120,6 @@ function messageFor(error: unknown): string {
   if (error instanceof ApiError) return `${t("operationFailed")} (${error.code}).`;
   return t("apiConnectionFailed");
 }
-
 
 function statusLabel(status: string): string {
   if (status === "CONFIRMED") return "Confirmed";
@@ -148,10 +151,10 @@ function statusLabel(status: string): string {
     </aside>
 
     <main>
-      <header v-if="['appointments', 'catalog', 'calendars'].includes(section)"><div><p class="eyebrow">{{ t('localEnvironment') }}</p><h1>{{ business?.name ?? 'YIBO Demo Clinic' }}</h1></div><span class="timezone">{{ business?.timezone ?? 'America/Merida' }}</span></header>
+      <header v-if="['appointments', 'availability', 'catalog', 'calendars'].includes(section)"><div><p class="eyebrow">{{ t('localEnvironment') }}</p><h1>{{ business?.name ?? 'YIBO Demo Clinic' }}</h1></div><span v-if="['catalog', 'calendars'].includes(section)" class="timezone">{{ business?.timezone ?? 'America/Merida' }}</span></header>
       <p v-if="globalError" class="alert" role="alert">{{ globalError }}</p>
 
-      <section v-if="section === 'office'" class="view office-view"><OfficeWorkspace :read-only="auth.principal?.roles.includes('read_only')" /></section>
+      <section v-if="section === 'office'" class="view office-view"><OfficeWorkspace :read-only="readOnly" /></section>
 
       <section v-else-if="section === 'overview'" class="view home-view">
         <div class="home-intro">
@@ -186,15 +189,19 @@ function statusLabel(status: string): string {
       </section>
 
       <section v-else-if="section === 'customers'" class="view">
-        <CustomerDirectory :read-only="auth.principal?.roles.includes('read_only')" :timezone="business?.timezone" @selected="selectDirectoryCustomer" />
+        <CustomerDirectory :read-only="readOnly" :timezone="business?.timezone" @selected="selectDirectoryCustomer" />
       </section>
 
       <section v-else-if="section === 'availability'" class="view">
-        <AvailabilityBoard :customer="customer" :read-only="auth.principal?.roles.includes('read_only')" @booked="availabilityBooked" />
+        <AvailabilitySearch :customer="customer" :read-only="readOnly" :can-manage-settings="adminSession.can('tenant_admin')" @booked="availabilityBooked" @customer-needed="chooseSection('customers')" @settings="locationId => chooseSection('settings', locationId)" />
+      </section>
+
+      <section v-else-if="section === 'team-availability'" class="view">
+        <AvailabilityBoard :customer="customer" :read-only="readOnly" @booked="availabilityBooked" />
       </section>
 
       <section v-else-if="section === 'appointments'" class="view">
-        <AppointmentAdministration :initial-customer-id="customer?.id" :initial-appointment-id="createdAppointment?.id" />
+        <AppointmentCalendar :read-only="readOnly" :customer="customer" :initial-appointment="createdAppointment" @customer-selected="customer = $event" />
       </section>
 
       <section v-else-if="section === 'calendars'" class="view">
@@ -206,7 +213,7 @@ function statusLabel(status: string): string {
       </section>
 
       <section v-else-if="section === 'settings'" class="view">
-        <LocationSettings @saved="locationSettingsSaved" />
+        <LocationSettings :initial-location-id="settingsLocationId" @saved="locationSettingsSaved" />
       </section>
     </main>
   </div>

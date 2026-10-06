@@ -97,3 +97,25 @@ describe("business configuration API", () => {
     ]);
   });
 });
+
+it("persists availability suggestions and the AI tool consumes the location policy", async () => {
+  const app = buildApplication({ clock: { now: () => new Date("2026-08-01T00:00:00Z") } });
+  server = await createApiServer(app);
+  const admin = await createAdminTestSession(app, server);
+  const current = await server.inject({ method: "GET", url: "/api/admin/business-configuration", headers: admin.readHeaders });
+  const document = current.json<{ version: number; configuration: EditableBusinessConfiguration }>();
+  const location = document.configuration.locations[0]!;
+  location.policies.availabilitySuggestions = { enabled: true, expansionDays: 1, maximumAlternatives: 2 };
+  location.openingHours = [{ dayOfWeek: 1, startTime: "09:00", endTime: "12:00" }];
+  location.professionals.forEach(p => { p.openingHours = []; });
+  const saved = await server.inject({ method: "PUT", url: "/api/admin/business-configuration", headers: { ...admin.mutationHeaders, "if-match": `"${document.version}"` }, payload: { configuration: document.configuration } });
+  expect(saved.statusCode).toBe(200);
+  expect(saved.json().configuration.locations[0].policies.availabilitySuggestions).toEqual(location.policies.availabilitySuggestions);
+  const result = await app.tools.execute({ tenantId: app.tenantId, locationId: location.id, callId: "suggestions-call", turnSequence: 1 }, { toolCallId: "suggestions", name: "check_availability", arguments: { rangeStart: "2026-08-10T08:00:00", rangeEnd: "2026-08-10T09:00:00" } });
+  expect(result.ok).toBe(true); if (!result.ok) return;
+  const data = result.data as { availableSlots: Array<{ outsideRequestedRange?: boolean; startAt: string }>; requestedPeriod: { endAt: string } };
+  expect(data.availableSlots).toHaveLength(2);
+  expect(data.availableSlots.every(s => s.outsideRequestedRange && s.startAt >= data.requestedPeriod.endAt)).toBe(true);
+  const stale = await server.inject({ method: "PUT", url: "/api/admin/business-configuration", headers: { ...admin.mutationHeaders, "if-match": `"${document.version}"` }, payload: { configuration: document.configuration } });
+  expect(stale.statusCode).toBe(409);
+});

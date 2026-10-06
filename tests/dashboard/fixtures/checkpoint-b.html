@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checkpoint B — synthetic browser regression fixture</title>
+<style>body{font-family:system-ui;margin:24px;background:#f3f6fb}nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}nav button{padding:8px}#app{max-width:1400px}h1{font-size:18px}</style>
+<h1>Checkpoint B browser fixture — synthetic events, no providers or microphone</h1>
+<nav><button id="append">Append 100 activities</button><button id="complete">Send duplicate call-end events</button><button id="disconnect">Disconnect test socket</button><button id="checks">Run layout regression checks</button></nav>
+<output id="results" aria-label="Layout regression results"></output>
+<div id="app"></div>
+<script type="module">
+import { createApp, h, nextTick } from "vue";
+import AgentVoiceLab from "../../../dashboard/src/components/AgentVoiceLab.vue";
+import { api } from "../../../dashboard/src/services/api.ts";
+// Only this test page replaces IO; application code and business configuration are unchanged.
+api.business = async () => ({ timezone: "America/Denver" });
+api.googleCalendarStatus = async () => ({ configured: true, connected: true });
+api.agentConfiguration = async () => ({ current: { enabledTools: ["check_availability", "create_appointment"] } });
+let current, sequence = 0, activity = 0;
+class FixtureSocket extends EventTarget {
+  readyState = 1;
+  constructor() {
+    super(); current = this; const id = ++sequence;
+    queueMicrotask(() => {
+      this.dispatchEvent(new Event("open"));
+      this.receive({ type: "voice.lab.ready", callId: `fixture-call-${id}`, tenantId: "fixture-tenant",
+        runtime: "openai-realtime", configurationSource: "saved", model: "fixture-model", voice: "fixture-voice" });
+    });
+  }
+  receive(message) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) })); }
+  send(data) {
+    if (typeof data !== "string") return;
+    if (JSON.parse(data).type === "mic.start") queueMicrotask(() => this.receive({ event: "conversation.opened" }));
+  }
+  close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
+}
+window.WebSocket = FixtureSocket;
+window.AudioContext = class {
+  state = "running"; sampleRate = 48000; destination = {};
+  createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+  createScriptProcessor() { return { connect() {}, disconnect() {}, onaudioprocess: null }; }
+  async close() { this.state = "closed"; }
+};
+Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
+  getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }),
+} });
+const append = () => {
+  for (let i = 0; i < 100; i++) current.receive({ event: `Synthetic activity ${++activity}` });
+};
+document.querySelector("#append").onclick = append;
+const settled = async () => { await nextTick(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); };
+document.querySelector("#checks").onclick = async () => {
+  const results = document.querySelector("#results");
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  try {
+    if (current.readyState !== 1) { document.querySelector(".lab-controls .start").click(); await settled(); }
+    const list = document.querySelector('[aria-label="Test activity history"]');
+    list.scrollTop = list.scrollHeight; list.dispatchEvent(new Event("scroll"));
+    append(); await settled();
+    const height = list.clientHeight, pageHeight = document.documentElement.scrollHeight;
+    const count = list.children.length, first = list.firstElementChild.textContent;
+    append(); await settled();
+    check(list.clientHeight === height && document.documentElement.scrollHeight === pageHeight, "Activity grew the page after reaching its bound");
+    check(list.scrollHeight > height && list.children.length === count + 100, "Activity is missing or does not scroll internally");
+    check(list.scrollHeight - list.clientHeight - list.scrollTop <= 1, "Following latest failed");
+    list.scrollTop = 0; list.dispatchEvent(new Event("scroll")); await settled();
+    append(); await settled();
+    check(list.scrollTop === 0 && list.firstElementChild.textContent === first, "Appending activity displaced older history");
+    const latest = [...document.querySelectorAll("button")].find(button => button.textContent === "Show latest");
+    check(Boolean(latest), "Show latest is missing while inspecting history");
+    latest.click(); await settled();
+    check(list.scrollHeight - list.clientHeight - list.scrollTop <= 1, "Show latest did not reach newest activity");
+    results.textContent = "PASS: bounded page height; scrollable retained entries; follows latest; preserves older scroll position; Show latest restores following (5 checks).";
+  } catch (error) { results.textContent = `FAIL: ${error.message}`; }
+};
+document.querySelector("#complete").onclick = () => {
+  current.receive({ event: "conversation.closed" }); current.receive({ event: "conversation.closed" });
+};
+document.querySelector("#disconnect").onclick = () => current.close();
+createApp({ render: () => h(AgentVoiceLab, { expectedTenantId: "fixture-tenant" }) }).mount("#app");
+</script></html>

@@ -114,7 +114,7 @@ describe("Google event identity across rescheduling", () => {
     const before = structuredClone(value.events.get(id));
     value.conflict();
     await expect(value.adapter.rescheduleEvent({ ...command, externalEventId: id }))
-      .resolves.toMatchObject({ ok: false, error: { code: "VALIDATION_ERROR" } });
+      .resolves.toMatchObject({ ok: false, error: { code: "NEEDS_RECONCILE" } });
     expect(value.events.get(id)).toEqual(before);
   });
 });

@@ -16,6 +16,8 @@ export const DEFAULT_VAD_SILENCE_DURATION_MS = 800;
 export const DEFAULT_IDLE_TIMEOUT_MS = 6_000;
 export const DEFAULT_NOISE_REDUCTION = "near_field" as const;
 export const DEFAULT_AGENT_BEHAVIOR: AgentBehaviorConfiguration = {
+  allowPriceDisclosure: true,
+  phoneReadback: "natural_grouped",
   greeting: { mode: "wait_for_caller" },
   responseStyle: { brevity: "brief", tone: "warm", pace: "balanced" },
   silence: {

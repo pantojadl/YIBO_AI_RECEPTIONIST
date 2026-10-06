@@ -15,10 +15,16 @@ await server.listen({ port, host });
 console.log(`YIBO API listening on ${host}:${port}`);
 console.log(`Local tenant: ${application.tenantId}`);
 
+const stuckBookingRecovery = setInterval(() => {
+  void application.appointments.recoverStuckBookings(application.tenantId).catch(() => undefined);
+}, 60_000);
+stuckBookingRecovery.unref();
+
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
+  clearInterval(stuckBookingRecovery);
   await application.telephony.close?.();
   await server.close();
 };

@@ -76,6 +76,8 @@ export interface ConversationRuntimePort {
 export interface ConversationRuntimeSession {
   sendText(text: string): Promise<void>;
   sendAudio(frame: AudioFrame): Promise<void>;
+  /** Ask the model for one spoken turn, without adding a caller message. */
+  requestResponse?(instructions: string): Promise<void>;
   sendToolResult(result: ToolResultEnvelope, options?: { requestResponse: boolean }): Promise<void>;
   interrupt(position?: AssistantPlaybackPosition): Promise<void>;
   close(): Promise<void>;

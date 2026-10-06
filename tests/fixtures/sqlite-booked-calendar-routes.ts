@@ -30,6 +30,9 @@ try {
     assert.equal((await appointments.findById(profile.tenantId, appointment.id))?.externalCalendarEventId, "original-event");
   }
   assert.deepEqual(await business.saveIfVersion(next, 9), { saved: false, currentVersion: 1 });
+  const disabled = structuredClone(profile); disabled.active = false;
+  assert.deepEqual(await business.saveIfVersion(disabled, 1), { saved: false, currentVersion: 1, reason: "CALENDAR_ROUTE_IN_USE" });
+  await assert.rejects(business.save(disabled), /CALENDAR_ROUTE_IN_USE/);
   const harmless = structuredClone(profile); harmless.name = "New display name";
   assert.deepEqual(await business.saveIfVersion(harmless, 1), { saved: true, version: 2 });
   assert.deepEqual(new SqliteAppointmentRepository(db, "MX").calendarRouteReferences(profile.tenantId), []);

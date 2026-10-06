@@ -1,0 +1,37 @@
+# New dedicated Linux Node host only; not installed/enabled by repository builds.
+# Fill/review /etc/yibo/backend.env and approve the DB before starting: startup migrates it.
+[Unit]
+Description=YIBO Fastify HTTP API
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/yibo/backend.env
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=yibo-api
+Group=yibo-api
+WorkingDirectory=/opt/yibo/current
+EnvironmentFile=/etc/yibo/backend.env
+# Avoid implicitly reading a checkout's .env and starting a second phone connection.
+Environment=DOTENV_CONFIG_PATH=/dev/null
+UnsetEnvironment=ASTERISK_ARI_URL ASTERISK_ARI_APPLICATION ASTERISK_ARI_USERNAME ASTERISK_ARI_PASSWORD YIBO_ASTERISK_MEDIA_HOST YIBO_ASTERISK_MEDIA_PORT_START YIBO_ASTERISK_MEDIA_PORT_END
+# Verify /usr/bin/node is the approved Node 22.16+ executable on the selected host.
+# tsx and SQL migration sources must remain installed alongside this release.
+ExecStart=/usr/bin/node --import tsx src/main.ts
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=yibo
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/yibo
+
+[Install]
+WantedBy=multi-user.target

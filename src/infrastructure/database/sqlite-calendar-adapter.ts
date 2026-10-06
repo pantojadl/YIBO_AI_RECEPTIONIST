@@ -54,6 +54,9 @@ export class SqliteCalendarAdapter implements CalendarPort, AppointmentCalendarP
     if (!validRange(command.startAt, command.endAt)) {
       return failure({ code: "VALIDATION_ERROR" as const, message: "A valid event range is required." });
     }
+    const current = this.eventRow(command.tenantId, command.employeeId, command.appointmentId, command.externalEventId);
+    if (!current) return failure({ code: "EVENT_NOT_FOUND" as const });
+    if (command.expectedEtag && command.expectedEtag !== etagOf(current)) return failure({ code: "NEEDS_RECONCILE" as const });
     const result = this.database.prepare(`
       UPDATE calendar_events SET start_at = ?, end_at = ?
       WHERE region_id = ? AND tenant_id = ? AND employee_id = ? AND appointment_id = ?
@@ -63,14 +66,36 @@ export class SqliteCalendarAdapter implements CalendarPort, AppointmentCalendarP
     return result.changes > 0 ? success(undefined) : failure({ code: "EVENT_NOT_FOUND" as const });
   }
 
-  async cancelEvent(command: { tenantId: string; locationId: string; employeeId: string; externalEventId: string }) {
+  async cancelEvent(command: { tenantId: string; locationId: string; employeeId: string; externalEventId: string; appointmentId?: string; expectedEtag?: string }) {
+    const current = this.database.prepare(`SELECT start_at, end_at, external_event_id FROM calendar_events
+      WHERE region_id = ? AND tenant_id = ? AND employee_id = ? AND external_event_id = ? AND cancelled = 0`)
+      .get(this.region, command.tenantId, command.employeeId, command.externalEventId) as { start_at: string; end_at: string } | undefined;
+    if (!current) return failure({ code: "EVENT_NOT_FOUND" as const });
+    if (command.expectedEtag && command.expectedEtag !== etagOf(current)) return failure({ code: "NEEDS_RECONCILE" as const });
     const result = this.database.prepare(`
       UPDATE calendar_events SET cancelled = 1
       WHERE region_id = ? AND tenant_id = ? AND employee_id = ? AND external_event_id = ?
     `).run(this.region, command.tenantId, command.employeeId, command.externalEventId);
     return result.changes > 0 ? success(undefined) : failure({ code: "EVENT_NOT_FOUND" as const });
   }
+
+  async inspectEvent(command: Parameters<AppointmentCalendarPort["inspectEvent"]>[0]): ReturnType<AppointmentCalendarPort["inspectEvent"]> {
+    const row = this.eventRow(command.tenantId, command.employeeId, command.appointmentId, command.externalEventId);
+    return success(row ? {
+      present: true, externalEventId: row.external_event_id, startAt: row.start_at, endAt: row.end_at, etag: etagOf(row),
+    } : { present: false });
+  }
+
+  private eventRow(tenantId: string, employeeId: string, appointmentId: string, externalEventId?: string) {
+    return this.database.prepare(`SELECT external_event_id, start_at, end_at FROM calendar_events
+      WHERE region_id = ? AND tenant_id = ? AND appointment_id = ? AND employee_id = ? AND cancelled = 0
+        AND (? IS NULL OR external_event_id = ?)`)
+      .get(this.region, tenantId, appointmentId, employeeId,
+        externalEventId ?? null, externalEventId ?? null) as { external_event_id: string; start_at: string; end_at: string } | undefined;
+  }
 }
+
+const etagOf = (row: { start_at: string; end_at: string }): string => `${row.start_at}\u0000${row.end_at}`;
 
 const validRange = (start: string, end: string): boolean => {
   const startDate = new Date(start);

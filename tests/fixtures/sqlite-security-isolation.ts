@@ -44,6 +44,11 @@ try {
         const cancelled = region === "MX" && tenantId === "tenant-a" && locationId === "default";
         assert.deepEqual(rows.map(row => row.serviceNameSnapshot), cancelled ? [] : [`${region}-${tenantId}-${locationId}`]);
         assert.equal((await repository.findByIdempotencyKey(tenantId, locationId))?.serviceNameSnapshot, `${region}-${tenantId}-${locationId}`);
+        const calendar = await repository.findInRange({ tenantId, locationId, rangeStart: "2026-09-20T15:00:00.000Z", rangeEnd: "2026-09-20T16:00:00.000Z" });
+        assert.deepEqual(calendar.map(row => row.serviceNameSnapshot), [`${region}-${tenantId}-${locationId}`]);
+        assert.equal(calendar[0]!.status, cancelled ? "CANCELLED" : "CONFIRMED");
+        assert.deepEqual(await repository.findInRange({ tenantId, locationId, rangeStart: "2026-09-20T15:30:00.000Z", rangeEnd: "2026-09-20T16:00:00.000Z" }), []);
+        assert.deepEqual(await repository.findInRange({ tenantId, locationId, rangeStart: "2026-09-20T14:30:00.000Z", rangeEnd: "2026-09-20T15:00:00.000Z" }), []);
       }
     }
   }

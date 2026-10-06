@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiServer } from "../../src/api/index.js";
 import { buildApplication } from "../../src/bootstrap/index.js";
 import { createAdminTestSession } from "../helpers/admin-session.js";
-import { createLocationEditor, newLocation } from "../../dashboard/src/services/location-editor.js";
+import { createLocationEditor, newLocation, updateAvailabilitySuggestions } from "../../dashboard/src/services/location-editor.js";
 import type { FastifyInstance } from "fastify";
 
 let server: FastifyInstance | undefined;
@@ -111,5 +111,61 @@ describe("UI-005 location editor through the authenticated versioned API", () =>
     expect(editor.state.draft).toBeUndefined();
     expect(editor.canSave.value).toBe(false);
     expect(editor.state.error).toContain("access");
+  });
+});
+
+describe("Checkpoint C availability suggestion settings", () => {
+  it("uses the existing defaults and saves, reloads and disables the selected location's policy without changing routing", async () => {
+    const { editor, requests } = await fixture();
+    const before = JSON.parse(JSON.stringify(editor.state.draft!));
+    expect(editor.state.draft!.locations[0]!.policies.availabilitySuggestions).toBeUndefined();
+    updateAvailabilitySuggestions(editor.state.draft!.locations[0]!, { enabled: true });
+    expect(editor.state.draft!.locations[0]!.policies.availabilitySuggestions).toEqual({ enabled: true, expansionDays: 1, maximumAlternatives: 3 });
+    updateAvailabilitySuggestions(editor.state.draft!.locations[0]!, { expansionDays: 4, maximumAlternatives: 5 });
+    expect(editor.dirty.value).toBe(true); expect(await editor.save()).toBe(true); await editor.load();
+    expect(editor.state.draft!.locations[0]!.policies.availabilitySuggestions).toEqual({ enabled: true, expansionDays: 4, maximumAlternatives: 5 });
+    updateAvailabilitySuggestions(editor.state.draft!.locations[0]!, { enabled: false });
+    expect(await editor.save()).toBe(true);
+    const after = JSON.parse(JSON.stringify(editor.state.draft!));
+    expect(after.locations[0].policies.availabilitySuggestions).toEqual({ enabled: false, expansionDays: 4, maximumAlternatives: 5 });
+    delete after.locations[0].policies.availabilitySuggestions;
+    expect(after).toEqual(before);
+    expect(requests.filter(item => item.method === "PUT").map(item => item.headers["if-match"])).toEqual(['"1"', '"2"']);
+  });
+
+  it.each([{ expansionDays: 0 }, { maximumAlternatives: 6 }])("retains invalid suggestion edits without saving %j", async patch => {
+    const { editor, app } = await fixture();
+    updateAvailabilitySuggestions(editor.state.draft!.locations[0]!, { enabled: true, ...patch });
+    expect(await editor.save()).toBe(false); expect(editor.dirty.value).toBe(true);
+    expect(await app.business.getBusinessConfiguration(app.tenantId)).toMatchObject({ ok: true, value: { version: 1 } });
+  });
+
+  it("does not share nested suggestion settings between a copied location and its source", async () => {
+    const { editor } = await fixture(); const source = editor.state.draft!.locations[0]!;
+    updateAvailabilitySuggestions(source, { enabled: true });
+    const added = newLocation(source, "new-location");
+    added.policies.availabilitySuggestions!.expansionDays = 7;
+    expect(source.policies.availabilitySuggestions!.expansionDays).toBe(1);
+  });
+});
+
+
+describe("launch integration location defaults", () => {
+  it("opens legacy settings without phantom unsaved changes and preserves explicit restrictions after save/reload", async () => {
+    const { editor, requests } = await fixture();
+    const location = editor.state.draft!.locations[0]!;
+    expect(location.policies).toMatchObject({ sameDayBooking: true, cancellationAllowed: true,
+      reschedulingAllowed: true, staffOverrideAllowed: false });
+    expect(location.aiCapabilities).toMatchObject({ collectEmail: false, quotePrices: true, afterHoursBehavior: "INFORMATION_ONLY" });
+    expect(editor.dirty.value).toBe(false);
+    expect(requests.every(request => request.method === "GET")).toBe(true);
+    location.policies.cancellationAllowed = false;
+    location.aiCapabilities!.quotePrices = false;
+    expect(editor.dirty.value).toBe(true);
+    expect(await editor.save()).toBe(true);
+    await editor.load();
+    expect(editor.dirty.value).toBe(false);
+    expect(editor.state.draft!.locations[0]!.policies.cancellationAllowed).toBe(false);
+    expect(editor.state.draft!.locations[0]!.aiCapabilities!.quotePrices).toBe(false);
   });
 });

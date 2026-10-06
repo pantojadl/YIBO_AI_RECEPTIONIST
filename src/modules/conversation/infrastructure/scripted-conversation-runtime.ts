@@ -29,6 +29,7 @@ export class ScriptedConversationRuntime implements ConversationRuntimePort {
 export class ScriptedConversationRuntimeSession implements ConversationRuntimeSession {
   readonly receivedAudio: AudioFrame[] = [];
   readonly receivedText: string[] = [];
+  readonly requestedResponses: string[] = [];
   readonly receivedToolResults: ToolResultEnvelope[] = [];
   interruptCount = 0;
   readonly interruptions: Array<AssistantPlaybackPosition | undefined> = [];
@@ -39,6 +40,10 @@ export class ScriptedConversationRuntimeSession implements ConversationRuntimeSe
 
   async sendText(text: string): Promise<void> {
     this.receivedText.push(text);
+  }
+
+  async requestResponse(instructions: string): Promise<void> {
+    this.requestedResponses.push(instructions);
   }
 
   async sendAudio(frame: AudioFrame): Promise<void> {

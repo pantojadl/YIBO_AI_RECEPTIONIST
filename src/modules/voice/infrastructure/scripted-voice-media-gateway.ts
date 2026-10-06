@@ -5,8 +5,11 @@ export class ScriptedVoiceMediaGateway implements VoiceMediaGateway {
   readonly openedCallIds: string[] = [];
   private readonly transports = new Map<string, ConversationTransport>();
 
-  register(callId: string, transport: ConversationTransport): void {
+  register(callId: string, transport: ConversationTransport): () => void {
     this.transports.set(callId, transport);
+    return () => {
+      if (this.transports.get(callId) === transport) this.transports.delete(callId);
+    };
   }
 
   async open(callId: string) {

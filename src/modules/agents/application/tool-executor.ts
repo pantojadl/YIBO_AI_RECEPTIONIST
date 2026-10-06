@@ -21,7 +21,7 @@ type ConfirmableAvailability = { requestedStartAt?: string; availableStartAts: s
 export class ToolExecutorImpl implements ToolExecutor {
   private readonly confirmableAvailabilityByCall = new Map<string, ConfirmableAvailability>();
   private readonly confirmedContactByCall = new Set<string>();
-  private readonly appointmentReferencesByCall = new Map<string, Map<string, string>>();
+  private readonly appointmentReferencesByCall = new Map<string, Map<string, { appointmentId: string; version: number }>>();
   private readonly testCustomersByCall = new Map<string, string>();
   private readonly testAppointmentsByCall = new Map<string, string[]>();
   private readonly enabledTestCalls = new Set<string>();
@@ -112,10 +112,10 @@ export class ToolExecutorImpl implements ToolExecutor {
       locationId: context.locationId,
       customerId: context.customerId,
     });
-    const references = new Map<string, string>();
+    const references = new Map<string, { appointmentId: string; version: number }>();
     const publicAppointments = appointments.map((appointment, index) => {
       const reference = `upcoming-${index + 1}`;
-      references.set(reference, appointment.id);
+      references.set(reference, { appointmentId: appointment.id, version: appointment.version ?? 1 });
       const professional = business.value.business.professionals
         .find(({ id }) => id === appointment.employeeId)?.displayName;
       return {
@@ -207,21 +207,25 @@ export class ToolExecutorImpl implements ToolExecutor {
       calendarLog("calendar.availability.failed", { tenantId: context.tenantId, code: result.error.code });
       return toolError(call, result.error.code, availabilityMessage(result.error.code), result.error.code === "EXTERNAL_CALENDAR_UNAVAILABLE" && result.error.retryable);
     }
-    calendarLog("calendar.availability.completed", { tenantId: context.tenantId, slotCount: result.value.length });
+    // Operations may further restrict Product UX suggestions for this caller.
+    const visibleSlots = business?.ok && !resolvedAiCapabilities(business.value.location).offerAlternatives
+      ? result.value.filter(slot => !slot.outsideRequestedRange).slice(0, 1)
+      : result.value;
+    calendarLog("calendar.availability.completed", { tenantId: context.tenantId, slotCount: visibleSlots.length });
     calendarLog("calendar.trace.availability.slots", {
       tenantId: context.tenantId,
-      slots: await Promise.all(result.value.map(async (slot) => ({
+      slots: await Promise.all(visibleSlots.map(async (slot) => ({
         employeeId: slot.employeeId,
         startAt: await this.traceDateTime(context.tenantId, context.locationId, slot.startAt),
         endAt: await this.traceDateTime(context.tenantId, context.locationId, slot.endAt),
       }))),
     });
-    if (result.value[0]) {
-      const selected = await this.normalizeDateTime(context.tenantId, context.locationId, result.value[0].startAt);
+    if (visibleSlots[0]) {
+      const selected = await this.normalizeDateTime(context.tenantId, context.locationId, visibleSlots[0].startAt);
       calendarLog("calendar.slot.selected", {
         tenantId: context.tenantId,
-        employeeId: result.value[0].employeeId,
-        selectedAvailabilitySlot: result.value[0].startAt,
+        employeeId: visibleSlots[0].employeeId,
+        selectedAvailabilitySlot: visibleSlots[0].startAt,
         clinicTimezone: selected?.timeZone,
         selectedLocalDateTime: selected?.dateTime,
       });
@@ -231,7 +235,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       : undefined;
     if (text(input.requestedStartAt) && !requestedStartAt) return invalid(call, "requestedStartAt must be a valid clinic-local or offset-aware datetime");
     const requested = requestedStartAt
-      ? await scheduling.validateSlot({ tenantId: context.tenantId, locationId: context.locationId, serviceId, employeeId: employeeId ?? result.value[0]?.employeeId ?? "", startAt: requestedStartAt.instant })
+      ? await scheduling.validateSlot({ tenantId: context.tenantId, locationId: context.locationId, serviceId, employeeId: employeeId ?? visibleSlots[0]?.employeeId ?? "", startAt: requestedStartAt.instant })
       : undefined;
     if (requestedStartAt) {
       calendarLog("calendar.requested_time.parsed", {
@@ -244,10 +248,10 @@ export class ToolExecutorImpl implements ToolExecutor {
     }
     this.confirmableAvailabilityByCall.set(trustedToolScope(context), {
       ...(requested?.ok ? { requestedStartAt: requestedStartAt?.instant } : {}),
-      availableStartAts: result.value.map((slot) => slot.startAt),
+      availableStartAts: visibleSlots.map((slot) => slot.startAt),
     });
     const businessLocale = business?.ok ? business.value.location.locale : "en";
-    const publicSlots = await Promise.all(result.value.map(async (slot) => {
+    const publicSlots = await Promise.all(visibleSlots.map(async (slot) => {
       const localStart = await this.normalizeDateTime(context.tenantId, context.locationId, slot.startAt);
       const localEnd = await this.normalizeDateTime(context.tenantId, context.locationId, slot.endAt);
       const professional = business?.ok
@@ -339,7 +343,7 @@ export class ToolExecutorImpl implements ToolExecutor {
     if (!customerId) return toolError(call, "CUSTOMER_REQUIRED", "Verify the caller before creating an appointment.", false);
     const supportsCustomerLookup = this.customers && typeof this.customers.getCustomer === "function";
     if (!testMode && supportsCustomerLookup && !this.confirmedContactByCall.has(trustedToolScope(context))) {
-      return toolError(call, "CONTACT_CONFIRMATION_REQUIRED", "Before booking, collect the caller's full name and callback number, repeat the number digit by digit for confirmation, save both with update_customer, then retry this exact verified slot.", false);
+      return toolError(call, "CONTACT_CONFIRMATION_REQUIRED", "Before booking, collect the caller's full name and callback number, read back the number using the configured phoneReadback style for confirmation, save both with update_customer, then retry this exact verified slot.", false);
     }
     const input = call.arguments as Input;
     if (!exactKeys(input, ["service", "employeeId", "startAt"], ["employeeId", "startAt"]) ||
@@ -455,7 +459,10 @@ export class ToolExecutorImpl implements ToolExecutor {
     const appointmentService = this.developerTest?.appointments ?? this.appointments;
     let deleted = 0;
     for (const appointmentId of appointments) {
-      const result = await appointmentService.cancelAppointment({ tenantId: context.tenantId, locationId: context.locationId, appointmentId });
+      const result = await appointmentService.cancelAppointment({
+        tenantId: context.tenantId, locationId: context.locationId, appointmentId,
+        idempotencyKey: `${context.callId}:${call.toolCallId}:${appointmentId}`,
+      });
       if (result.ok) deleted += 1;
     }
     this.testAppointmentsByCall.delete(trustedToolScope(context));
@@ -471,7 +478,8 @@ export class ToolExecutorImpl implements ToolExecutor {
     if (!exactKeys(input, ["appointmentReference"], ["appointmentReference"]) || !text(input.appointmentReference)) {
       return invalid(call, "appointmentReference from list_customer_appointments is required");
     }
-    const appointmentId = this.appointmentReferencesByCall.get(trustedToolScope(context))?.get(input.appointmentReference);
+    const reference = this.appointmentReferencesByCall.get(trustedToolScope(context))?.get(input.appointmentReference);
+    const appointmentId = reference?.appointmentId;
     if (!appointmentId) return toolError(call, "APPOINTMENT_REFERENCE_NOT_FOUND", "List upcoming appointments again and use one of the returned references.", false);
     const lookup = await appointments.getAppointment({
       tenantId: context.tenantId,
@@ -485,10 +493,13 @@ export class ToolExecutorImpl implements ToolExecutor {
       tenantId: context.tenantId,
       locationId: context.locationId,
       appointmentId,
+      expectedVersion: reference!.version,
+      idempotencyKey: `${context.callId}:${call.toolCallId}`,
     });
     if (!result.ok) {
       const retryable = result.error.code === "CALENDAR_SYNC_FAILED" && result.error.retryable;
-      return toolError(call, result.error.code, "The appointment could not be cancelled. Do not claim it was cancelled.", retryable);
+      return toolError(call, result.error.code,
+        appointmentConflictMessage(result.error.code) ?? "The appointment could not be cancelled. Do not claim it was cancelled.", retryable);
     }
     this.appointmentReferencesByCall.get(trustedToolScope(context))?.delete(input.appointmentReference);
     return { toolCallId: call.toolCallId, ok: true as const, data: { cancelled: true, reference: input.appointmentReference } };
@@ -504,7 +515,8 @@ export class ToolExecutorImpl implements ToolExecutor {
       || !text(input.appointmentReference) || !dateTime(input.startAt)) {
       return invalid(call, "appointmentReference and a valid startAt are required");
     }
-    const appointmentId = this.appointmentReferencesByCall.get(trustedToolScope(context))?.get(input.appointmentReference);
+    const reference = this.appointmentReferencesByCall.get(trustedToolScope(context))?.get(input.appointmentReference);
+    const appointmentId = reference?.appointmentId;
     if (!appointmentId) return toolError(call, "APPOINTMENT_REFERENCE_NOT_FOUND", "List upcoming appointments again and use one of the returned references.", false);
     const lookup = await appointments.getAppointment({ tenantId: context.tenantId, locationId: context.locationId, appointmentId });
     if (!lookup.ok || lookup.value.customerId !== customerId) {
@@ -525,14 +537,17 @@ export class ToolExecutorImpl implements ToolExecutor {
       locationId: context.locationId,
       appointmentId,
       startAt: normalizedStartAt.instant,
+      expectedVersion: reference!.version,
+      idempotencyKey: `${context.callId}:${call.toolCallId}`,
     });
     if (!result.ok) {
       const retryable = result.error.code === "CALENDAR_SYNC_FAILED" && result.error.retryable;
       const message = result.error.code === "SLOT_NO_LONGER_AVAILABLE"
         ? "That new time is no longer available. Offer a verified alternative."
-        : "The appointment could not be rescheduled. Do not claim it was changed.";
+        : appointmentConflictMessage(result.error.code) ?? "The appointment could not be rescheduled. Do not claim it was changed.";
       return toolError(call, result.error.code, message, retryable);
     }
+    reference!.version = result.value.version ?? reference!.version + 1;
     calendarLog("calendar.appointment.reschedule_completed", {
       tenantId: context.tenantId, appointmentId: result.value.id, startAt: result.value.startAt,
     });
@@ -608,3 +623,10 @@ const formatAddress = (address: { line1: string; line2?: string; city: string; a
     .filter((part): part is string => Boolean(part?.trim()))
     .join(", ");
 };
+
+function appointmentConflictMessage(code: string): string | undefined {
+  if (code === "APPOINTMENT_VERSION_CONFLICT") return "This appointment changed since it was listed. List upcoming appointments again and verify the current details with the caller before another change. Do not claim success.";
+  if (code === "APPOINTMENT_OPERATION_IN_PROGRESS") return "Another appointment operation is in progress. Do not retry automatically or claim success. Check the current appointment again before continuing.";
+  if (code === "NEEDS_RECONCILE") return "The calendar event no longer matches this operation. Do not claim success. Check the appointment again before continuing.";
+  return undefined;
+}

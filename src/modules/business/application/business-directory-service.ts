@@ -161,6 +161,7 @@ const toVersionedConfiguration = (
   region: profile.region,
   businessId: profile.businessId,
   configuration: {
+    ...(profile.displayCurrency === undefined ? {} : { displayCurrency: profile.displayCurrency }),
     name: profile.name,
     active: profile.active,
     services: structuredClone(profile.services),

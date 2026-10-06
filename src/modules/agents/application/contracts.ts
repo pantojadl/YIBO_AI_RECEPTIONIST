@@ -92,6 +92,9 @@ export interface AgentConversationConfiguration {
 }
 
 export interface AgentBehaviorConfiguration {
+  /** Missing in older documents means true. Applies only to caller-facing AI output. */
+  allowPriceDisclosure?: boolean;
+  phoneReadback?: "natural_grouped" | "digit_by_digit";
   greeting:
     | { mode: "wait_for_caller" }
     | { mode: "automatic"; message: string };

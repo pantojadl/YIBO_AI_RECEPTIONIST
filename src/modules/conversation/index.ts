@@ -1,4 +1,4 @@
-export { ConversationService } from "./application/conversation-service.js";
+export { ConversationService, SPEND_FORCED_SHUTDOWN_MS } from "./application/conversation-service.js";
 export type {
   AudioSink,
   ConversationCompletion,

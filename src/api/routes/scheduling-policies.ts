@@ -1,3 +1,4 @@
+import { isAvailabilitySuggestionsPolicy } from "../../modules/business/domain/multi-location-business.js";
 import type { FastifyInstance } from "fastify";
 import type { YiboApplication } from "../../bootstrap/index.js";
 import {
@@ -48,7 +49,9 @@ const parsePolicy = (value: unknown): LocationSchedulingPolicy | null => {
     "defaultServiceId", "slotIncrementMinutes", "minimumLeadTimeMinutes", "maximumBookingHorizonDays",
     "maximumResults", "minimumCancellationNoticeMinutes", "minimumRescheduleNoticeMinutes", "concurrentCapacity",
   ];
-  if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key as keyof LocationSchedulingPolicy))
+  const suggestions = value.availabilitySuggestions;
+  if (suggestions !== undefined && !isAvailabilitySuggestionsPolicy(suggestions)) return null;
+  if (keys.some(key => !(key in value)) || Object.keys(value).some((key) => key !== "availabilitySuggestions" && !keys.includes(key as keyof LocationSchedulingPolicy))
     || typeof value.defaultServiceId !== "string" || !value.defaultServiceId.trim()
     || !(SLOT_INCREMENT_MINUTES as readonly unknown[]).includes(value.slotIncrementMinutes)) return null;
   for (const key of keys.slice(2) as Array<Exclude<keyof LocationSchedulingPolicy, "defaultServiceId" | "slotIncrementMinutes">>) {
@@ -56,6 +59,7 @@ const parsePolicy = (value: unknown): LocationSchedulingPolicy | null => {
     if (!Number.isSafeInteger(value[key]) || Number(value[key]) < minimum) return null;
   }
   return {
+    ...(suggestions === undefined ? {} : { availabilitySuggestions: suggestions }),
     defaultServiceId: value.defaultServiceId.trim(),
     slotIncrementMinutes: value.slotIncrementMinutes as LocationSchedulingPolicy["slotIncrementMinutes"],
     minimumLeadTimeMinutes: Number(value.minimumLeadTimeMinutes),

@@ -5,6 +5,10 @@ export interface ApplicationConfiguration {
   openAiRealtimeModel: string;
   conversationVoice: string;
   maxOutputTokens: number;
+  /** Hard cap on one OpenAI call, in milliseconds. */
+  callMaxDurationMs: number;
+  /** Hard cap on input plus output tokens for one OpenAI call. */
+  callMaxTokens: number;
   dashboardOrigin: string;
   openAiApiKey?: string;
   openAiAdminKey?: string;
@@ -34,6 +38,18 @@ export function loadConfiguration(environment: NodeJS.ProcessEnv = process.env):
     1,
     4096,
   ) ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const callMaxMinutes = optionalIntegerInRange(
+    environment.YIBO_CALL_MAX_MINUTES,
+    "YIBO_CALL_MAX_MINUTES",
+    1,
+    120,
+  ) ?? DEFAULT_CALL_MAX_MINUTES;
+  const callMaxTokens = optionalIntegerInRange(
+    environment.YIBO_CALL_MAX_TOKENS,
+    "YIBO_CALL_MAX_TOKENS",
+    1_000,
+    5_000_000,
+  ) ?? DEFAULT_CALL_MAX_TOKENS;
   const dashboardOrigin = validOrigin(environment.YIBO_DASHBOARD_ORIGIN?.trim() || "http://localhost:5173");
   const openAiApiKey = environment.OPENAI_API_KEY?.trim();
   const openAiAdminKey = environment.OPENAI_ADMIN_KEY?.trim();
@@ -49,6 +65,8 @@ export function loadConfiguration(environment: NodeJS.ProcessEnv = process.env):
     openAiRealtimeModel,
     conversationVoice,
     maxOutputTokens,
+    callMaxDurationMs: callMaxMinutes * 60_000,
+    callMaxTokens,
     dashboardOrigin,
     ...(openAiApiKey ? { openAiApiKey } : {}),
     ...(openAiAdminKey ? { openAiAdminKey } : {}),
@@ -100,3 +118,6 @@ import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   DEFAULT_REALTIME_MODEL,
 } from "../modules/agents/index.js";
+
+const DEFAULT_CALL_MAX_MINUTES = 15;
+const DEFAULT_CALL_MAX_TOKENS = 150_000;

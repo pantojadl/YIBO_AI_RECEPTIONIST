@@ -13,6 +13,7 @@ type CalendarEvent = {
   endAt: string;
   idempotencyKey: string;
   cancelled: boolean;
+  etag: string;
 };
 
 /**
@@ -24,6 +25,7 @@ export class InMemoryCalendarAdapter implements CalendarPort, AppointmentCalenda
   private readonly events = new Map<string, CalendarEvent>();
   private readonly eventIdByKey = new Map<string, string>();
   private nextId = 1;
+  private revision = 0;
 
   async getBusyIntervals(query: {
     tenantId: string;
@@ -70,7 +72,7 @@ export class InMemoryCalendarAdapter implements CalendarPort, AppointmentCalenda
     if (existingId) return success({ provider: "in-memory", externalEventId: existingId });
 
     const externalEventId = `calendar-event-${this.nextId++}`;
-    this.events.set(externalEventId, { ...command, externalEventId, cancelled: false });
+    this.events.set(externalEventId, { ...command, externalEventId, cancelled: false, etag: this.nextEtag() });
     this.eventIdByKey.set(key, externalEventId);
     return success({ provider: "in-memory", externalEventId });
   }
@@ -84,18 +86,36 @@ export class InMemoryCalendarAdapter implements CalendarPort, AppointmentCalenda
       || event.employeeId !== command.employeeId || event.appointmentId !== command.appointmentId) {
       return failure({ code: "EVENT_NOT_FOUND" as const });
     }
-    this.events.set(event.externalEventId, { ...event, startAt: command.startAt, endAt: command.endAt });
+    if (command.expectedEtag && command.expectedEtag !== event.etag) return failure({ code: "NEEDS_RECONCILE" as const });
+    this.events.set(event.externalEventId, { ...event, startAt: command.startAt, endAt: command.endAt, etag: this.nextEtag() });
     return success(undefined);
   }
 
-  async cancelEvent(command: { tenantId: string; locationId: string; employeeId: string; externalEventId: string }) {
+  async cancelEvent(command: { tenantId: string; locationId: string; employeeId: string; externalEventId: string; expectedEtag?: string }) {
     const event = this.events.get(command.externalEventId);
     if (!event || event.tenantId !== command.tenantId || event.locationId !== command.locationId
       || event.employeeId !== command.employeeId) {
       return failure({ code: "EVENT_NOT_FOUND" as const });
     }
-    this.events.set(event.externalEventId, { ...event, cancelled: true });
+    if (command.expectedEtag && command.expectedEtag !== event.etag) return failure({ code: "NEEDS_RECONCILE" as const });
+    this.events.set(event.externalEventId, { ...event, cancelled: true, etag: this.nextEtag() });
     return success(undefined);
+  }
+
+  async inspectEvent(command: Parameters<AppointmentCalendarPort["inspectEvent"]>[0]): ReturnType<AppointmentCalendarPort["inspectEvent"]> {
+    const found = [...this.events.values()].find((event) => !event.cancelled
+      && event.tenantId === command.tenantId
+      && event.appointmentId === command.appointmentId
+      && event.employeeId === command.employeeId
+      && (command.externalEventId === undefined || event.externalEventId === command.externalEventId));
+    return success(found
+      ? { present: true, externalEventId: found.externalEventId, startAt: found.startAt, endAt: found.endAt, etag: found.etag }
+      : { present: false });
+  }
+
+  private nextEtag(): string {
+    this.revision += 1;
+    return `etag-${this.revision}`;
   }
 }
 

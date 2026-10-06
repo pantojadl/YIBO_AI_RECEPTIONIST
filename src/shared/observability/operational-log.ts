@@ -8,6 +8,7 @@ const correlation = (value: string) => createHash("sha256").update(value).digest
 const numericFields = new Set(["durationMs", "sampleCount", "p50Ms", "p95Ms", "slotCount", "bytes", "audioBytes", "queueDepth", "firstAudioToFirstRtpMs", "assistantTurnNumber", "outboundQueueDepth", "underruns", "overruns", "packetCount", "minElapsedMs", "maxElapsedMs", "averageElapsedMs", "p95ElapsedMs", "p99ElapsedMs", "packetsOver25Ms", "packetsOver30Ms", "packetsOver40Ms", "maxBufferedAudioMs", "averageBufferedAudioMs", "finalDrainMs", "echoCorrelation"]);
 const codes = new Set(["CONFIRMATION_REQUIRED", "INVALID_CONFIRMATION_TOKEN", "CONFIRMATION_MISMATCH", "CONFIRMATION_EXPIRED", "CONFIRMATION_PENDING_NEW_TURN", "CALENDAR_SYNC_FAILED", "EXTERNAL_CALENDAR_UNAVAILABLE", "ACTION_OUTCOME_UNKNOWN", "TOOL_TIMEOUT", "TOOL_EXECUTION_FAILED", "SLOT_NO_LONGER_AVAILABLE", "TRANSFER_FAILED", "TRANSFER_NOT_CONFIGURED", "TOOL_LIMIT_REACHED", "RUNTIME_ERROR", "AUDIO_TRANSPORT_ERROR", "CONNECTION_FAILED"]);
 const labels = new Set(["started", "completed", "failed", "cancelled", "closed", "unknown", "speech_started", "speech_stopped", "silence_timeout", "interrupted", "create_appointment", "cancel_appointment", "reschedule_appointment", "transfer_to_human", "get_service_information", "list_customer_appointments", "check_availability", "update_customer", "speech_to_response", "speech_to_first_audio", "speech_to_response_done", "first_audio_to_rtp", "tool_round_trip", "session_startup", "session_duration", "turn_duration", "cleanup"]);
+const secretText = /bearer\s+\S+|refresh_token|access_token|client_secret|ya29\./i;
 
 /** Fixed fields only: no transcripts, tool arguments/results, dates, calendar IDs or errors. */
 export function operationalRecord(event: string, metadata: Record<string, unknown> = {}, trusted = context.getStore()): Record<string, unknown> {
@@ -19,6 +20,7 @@ export function operationalRecord(event: string, metadata: Record<string, unknow
   if (location) record.location = correlation(`${tenant ?? ""}:${location}`);
   if (call) record.call = correlation(call);
   for (const [key, value] of Object.entries(metadata)) {
+    if (typeof value === "string" && secretText.test(value)) continue;
     if (numericFields.has(key) && typeof value === "number" && Number.isFinite(value) && value >= 0) record[key] = Math.round(value * 100) / 100;
     if (["phase", "metric", "tool"].includes(key) && typeof value === "string") record[key] = labels.has(value) ? value : "unknown";
     if (key === "code" && typeof value === "string") record.code = codes.has(value) ? value : "OTHER";

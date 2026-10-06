@@ -1,3 +1,6 @@
+import { SqliteAppointmentConcurrencyGuard } from "../infrastructure/database/sqlite-appointment-concurrency-guard.js";
+import { SqliteCallLivenessStore } from "../infrastructure/database/sqlite-call-liveness-store.js";
+import { configureCallLiveness } from "../modules/calls/application/call-liveness.js";
 import { buildAsteriskIntegration } from "./asterisk-integration.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -49,6 +52,7 @@ export async function buildConfiguredApplication(options: BuildApplicationOption
   const path = environment[`YIBO_DATABASE_${tenant.region}`]?.trim() || defaultDatabasePath(tenant.region);
   const database = openRegionalDatabase(tenant.region, path);
   migrateDatabase(database);
+  configureCallLiveness({ store: new SqliteCallLivenessStore(database) });
   seedBusiness(database, tenant);
   const businessRepository = new SqliteBusinessRepository(database, tenant.region);
   await importLegacyDefaultCalendar(environment, tenantId, businessRepository);
@@ -109,6 +113,7 @@ export async function buildConfiguredApplication(options: BuildApplicationOption
     callRepository,
     customerRepository,
     appointmentRepository,
+    appointmentConcurrencyGuard: options.appointmentConcurrencyGuard ?? new SqliteAppointmentConcurrencyGuard(database, tenant.region),
     appointmentNotifications: notifications,
     providerReadiness: { email: Boolean(environment.RESEND_API_KEY?.trim() && environment.YIBO_EMAIL_FROM?.trim()),
       telephony: Boolean(asterisk), calendar: Boolean(google), realtime: applicationRuntimeConfigured(environment) },

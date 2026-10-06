@@ -16,6 +16,10 @@ const migrations = [
   { version: 8, path: fileURLToPath(new URL("./migrations/008_business_configuration_version.sql", import.meta.url)) },
   { version: 9, path: fileURLToPath(new URL("./migrations/009_appointment_price_snapshot.sql", import.meta.url)) },
   { version: 10, path: fileURLToPath(new URL("./migrations/010_office_operations.sql", import.meta.url)) },
+  { version: 11, path: fileURLToPath(new URL("./migrations/011_appointment_edit_protection.sql", import.meta.url)) },
+  { version: 12, path: fileURLToPath(new URL("./migrations/012_stuck_booking_recovery.sql", import.meta.url)) },
+  { version: 13, path: fileURLToPath(new URL("./migrations/013_lease_fence_and_intent.sql", import.meta.url)) },
+  { version: 14, path: fileURLToPath(new URL("./migrations/014_intent_etag.sql", import.meta.url)) },
 ];
 
 export const defaultDatabasePath = (region: RegionId): string =>

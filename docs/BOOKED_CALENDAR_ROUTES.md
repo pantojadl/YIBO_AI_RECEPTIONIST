@@ -32,6 +32,11 @@ professional references do not block a save. A version conflict takes precedence
 API rejection is HTTP 409 `CALENDAR_ROUTE_IN_USE`, with no configuration version
 increment or success audit. The calendar editor retains the draft and explains why.
 
+The 2026-09-22 closure follow-up also blocks disabling a currently accessible
+business/location/professional assignment used by protected bookings, even when its
+calendar ID is unchanged. Restoring an already-disabled route with the same ID is
+allowed. This closes a full-document configuration bypass; see `BUSINESS_TEST_READINESS.md`.
+
 Reschedule/cancel continue using the original unchanged route and existing event ID.
 After all affected bookings are cancelled, the route can change and new bookings
 use the new calendar. No events are implicitly moved, copied, recreated or deleted.

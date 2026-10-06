@@ -164,6 +164,17 @@ class OpenAIRealtimeSession implements ConversationRuntimeSession {
     this.setState("thinking", { source: "text_turn" });
   }
 
+  async requestResponse(instructions: string): Promise<void> {
+    this.assertOpen();
+    const normalized = instructions.trim();
+    if (!normalized) throw new Error("Conversation instructions must not be empty");
+    this.endingCall = false;
+    this.responseRequested = true;
+    this.connection.send({ type: "response.create", response: { instructions: normalized } });
+    this.logger.info?.("OpenAI Realtime response.create sent", { source: "spend_limit" });
+    this.setState("thinking", { source: "spend_limit" });
+  }
+
   async sendAudio(frame: AudioFrame): Promise<void> {
     this.assertOpen();
     if (this.mode !== "audio") {

@@ -40,9 +40,16 @@ export interface StartConversationCommand {
   observeEvent?(event: ConversationRuntimeEvent): void;
 }
 
+export interface CallSpendLimit {
+  maxDurationMs: number;
+  maxTokens: number;
+}
+
 export interface ConversationServiceDependencies {
   runtime: ConversationRuntimePort;
   usageRecorder?: ConversationUsageRecorder;
+  /** Hard per-call OpenAI cap. Omitted values use the built-in defaults. */
+  spendLimit?: CallSpendLimit;
 }
 
 export type ConversationCompletion =
@@ -69,4 +76,5 @@ export interface ConversationSessionControllerDependencies {
   runtimeSession: ConversationRuntimeSession;
   command: StartConversationCommand;
   usageRecorder?: ConversationUsageRecorder;
+  spendLimit?: CallSpendLimit;
 }

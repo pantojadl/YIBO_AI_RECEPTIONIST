@@ -1,5 +1,6 @@
 import { createSocket } from "node:dgram";
 import { describe, expect, it, vi } from "vitest";
+import { resetCallLiveness } from "../../src/modules/calls/index.js";
 import { buildApplication } from "../../src/bootstrap/build-application.js";
 import { DEVELOPMENT_US_BUSINESS } from "../../src/app/development-fixtures.js";
 import { BusinessDirectoryService, InMemoryBusinessRepository } from "../../src/modules/business/index.js";
@@ -34,6 +35,7 @@ describe("integrated phone booking through Google Calendar", () => {
     { locationId: "default", name: "Central Clinic", zone: "America/Chicago", did: "+15125550100", price: 9500, calendar: "central@example.test", localStart: "2026-09-21T10:30:00-05:00", utcStart: "2026-09-21T15:30:00.000Z", port: 50220 },
     { locationId: "west", name: "West Clinic", zone: "America/Denver", did: "+13035550100", price: 12500, calendar: "west-professional@example.test", localStart: "2026-09-21T10:30:00-06:00", utcStart: "2026-09-21T16:30:00.000Z", port: 50221 },
   ])("books the called $name with its price, timezone and calendar", async (scenario) => {
+    resetCallLiveness();
     const profile = structuredClone(DEVELOPMENT_US_BUSINESS);
     profile.locations[0]!.name = "Central Clinic";
     profile.locations[0]!.defaultCalendarId = "central@example.test";
@@ -52,6 +54,9 @@ describe("integrated phone booking through Google Calendar", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = new URL(String(input));
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-access");
+      if ((init?.method ?? "GET") === "GET" && url.searchParams.get("privateExtendedProperty")?.startsWith("yiboOperationId=")) {
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      }
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body));
       if (url.pathname.endsWith("/freeBusy")) {

@@ -272,7 +272,10 @@ describe("ToolExecutorImpl", () => {
       customerId: "test-customer", source: "DEVELOPER_TEST", sourceCallId: "developer-call",
     }));
     expect(deleted).toEqual({ toolCallId: "delete-test", ok: true, data: { deleted: 1 } });
-    expect(cancelAppointment).toHaveBeenCalledWith({ tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1" });
+    expect(cancelAppointment).toHaveBeenCalledWith({
+      tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1",
+      idempotencyKey: "developer-call:delete-test:appointment-1",
+    });
   });
 
   it("cannot delete normal appointments through a public session", async () => {
@@ -506,7 +509,8 @@ describe("ToolExecutorImpl", () => {
     });
 
     expect(rescheduleAppointment).toHaveBeenCalledWith({
-      tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1", startAt: "2026-08-11T21:00:00.000Z",
+      tenantId: "tenant-a", locationId: "default", appointmentId: "appointment-1", startAt: "2026-08-11T21:00:00.000Z", expectedVersion: 1,
+      idempotencyKey: "call-1:tool-reschedule",
     });
     expect(result).toEqual({
       toolCallId: "tool-reschedule",

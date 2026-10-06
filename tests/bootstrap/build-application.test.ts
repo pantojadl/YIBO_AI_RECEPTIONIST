@@ -51,6 +51,8 @@ describe("buildApplication", () => {
         openAiRealtimeModel: "gpt-realtime-2.1",
         conversationVoice: "marin",
         maxOutputTokens: 512,
+        callMaxDurationMs: 15 * 60_000,
+        callMaxTokens: 150_000,
         dashboardOrigin: "http://localhost:5173",
       },
     });
@@ -66,6 +68,8 @@ describe("buildApplication", () => {
         openAiRealtimeModel: "gpt-realtime-2.1",
         conversationVoice: "marin",
         maxOutputTokens: 512,
+        callMaxDurationMs: 15 * 60_000,
+        callMaxTokens: 150_000,
         dashboardOrigin: "http://localhost:5173",
       },
       runtime,

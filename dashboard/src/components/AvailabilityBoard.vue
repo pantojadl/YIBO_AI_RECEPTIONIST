@@ -21,9 +21,18 @@ async function search() { if (!location.value || !serviceId.value) return; busy.
     serviceId: serviceId.value, employeeId: doctor.id, rangeStart, rangeEnd: zonedStart(next.toISOString().slice(0,10), location.value!.timezone) })).slots] as const));
   slotsByDoctor.value = Object.fromEntries(entries);
 } catch (caught) { error.value = caught instanceof Error ? caught.message : "Could not load availability."; } finally { busy.value = false; } }
-async function book(slot: Slot) { if (!props.customer || props.readOnly) return; busy.value = true; try { const appointment = await api.createAppointment({
-  locationId: locationId.value, customerId: props.customer.id, serviceId: serviceId.value, employeeId: slot.employeeId, startAt: slot.startAt });
-  emit("booked", appointment); await search(); } finally { busy.value = false; } }
+async function book(slot: Slot) {
+  if (!props.customer || props.readOnly || busy.value) return;
+  const idempotencyKey = crypto.randomUUID();
+  busy.value = true;
+  try {
+    const appointment = await api.createAppointment({
+      locationId: locationId.value, customerId: props.customer.id, serviceId: serviceId.value,
+      employeeId: slot.employeeId, startAt: slot.startAt, idempotencyKey,
+    });
+    emit("booked", appointment); await search();
+  } finally { busy.value = false; }
+}
 const time = (value: string) => new Intl.DateTimeFormat("en", { timeZone: location.value?.timezone ?? "UTC", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 function nextWeekday() { const value = new Date(); value.setDate(value.getDate() + 1); while ([0,6].includes(value.getDay())) value.setDate(value.getDate() + 1); return value.toISOString().slice(0,10); }
 function zonedStart(day: string, timezone: string) { const [year, month, date] = day.split("-").map(Number); const wall = Date.UTC(year, month - 1, date); let instant = wall;

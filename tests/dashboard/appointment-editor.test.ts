@@ -120,7 +120,7 @@ describe("UI-008 appointment administration", () => {
     expect((await server!.inject({ method: "GET", url: "/api/locations/south/appointments?customerId=a&customerId=b", headers: session.readHeaders })).statusCode).toBe(400);
     expect((await server!.inject({ method: "GET", url: "/api/availability?locationId=a&locationId=b&serviceId=consultation&rangeStart=2026-08-10&rangeEnd=2026-08-11", headers: session.readHeaders })).statusCode).toBe(400);
     await expect(api.locationAppointment("default", booked.id)).rejects.toMatchObject({ status: 404 });
-    expect((await server!.inject({ method: "POST", url: `/api/locations/default/appointments/${booked.id}/cancel`, headers: session.mutationHeaders, payload: {} })).statusCode).toBe(404);
+    expect((await server!.inject({ method: "POST", url: `/api/locations/default/appointments/${booked.id}/cancel`, headers: { ...session.mutationHeaders, "idempotency-key": "wrong-location" }, payload: {} })).statusCode).toBe(404);
   });
 
   it("clears details and pending actions when changing location", async () => {
@@ -133,5 +133,36 @@ describe("UI-008 appointment administration", () => {
   it("renders the appointment instant in the selected location timezone", () => {
     expect(appointmentTime("2026-08-10T16:30:00Z", "America/Denver")).toContain("10:30");
     expect(appointmentTime("2026-08-10T16:30:00Z", "America/New_York")).toContain("12:30");
+  });
+});
+
+describe("RISK-001 office edit conflicts", () => {
+  it("requires review of fresh details after another operator reschedules; no stale mutation or automatic retry", async () => {
+    const { app, editor, booked, requests } = await fixture();
+    await editor.lookup(booked.id);
+    const moved = await app.appointments.rescheduleAppointment({ tenantId: app.tenantId, locationId: "south", appointmentId: booked.id,
+      expectedVersion: booked.version, startAt: "2026-08-11T16:00:00Z", idempotencyKey: "editor-move" }); expect(moved.ok).toBe(true);
+    const cancel = vi.spyOn(app.calendar, "cancelEvent");
+    editor.state.pending = { kind: "cancel" };
+    expect(await editor.confirm()).toBe(false); expect(editor.state.error).toContain("changed by someone else");
+    expect(editor.state.message).toBe(""); expect(editor.state.pending).toBeUndefined(); expect(cancel).not.toHaveBeenCalled();
+    await editor.confirm(); expect(requests.filter(item => item.url.endsWith("/cancel"))).toHaveLength(1);
+    await editor.lookup(booked.id); expect(editor.state.selected!.startAt).toBe("2026-08-11T16:00:00.000Z");
+    editor.state.pending = { kind: "cancel" }; expect(await editor.confirm()).toBe(true);
+    expect(editor.state.selected).toMatchObject({ status: "CANCELLED", externalCalendarEventId: booked.externalCalendarEventId });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects invalid revision headers without weakening tenant or location checks", async () => {
+    const { booked, session } = await fixture();
+    for (const action of ["cancel", "reschedule", "outcome"]) {
+      const response = await server!.inject({ method: "POST", url: `/api/locations/south/appointments/${booked.id}/${action}`,
+        headers: { ...session.mutationHeaders, "if-match": '"0"' },
+        payload: action === "cancel" ? {} : action === "reschedule" ? { startAt: "2026-08-11T16:00:00Z" } : { outcome: "NO_SHOW" } });
+      expect(response.statusCode).toBe(400); expect(response.json().error.code).toBe("INVALID_IF_MATCH");
+    }
+    const wrongLocation = await server!.inject({ method: "POST", url: `/api/locations/default/appointments/${booked.id}/cancel`,
+      headers: { ...session.mutationHeaders, "if-match": `"${booked.version}"`, "idempotency-key": "wrong-location-match" }, payload: {} });
+    expect(wrongLocation.statusCode).toBe(404);
   });
 });

@@ -22,7 +22,7 @@ export const AGENT_TOOL_DEFINITIONS: AgentToolDefinition[] = [
   },
   {
     name: "check_availability",
-    description: "Find real clinic-calendar appointment slots. Use dateExpression for natural caller phrases. service is an optional patient-facing choice such as Cleaning or Consultation; omit it to use the clinic's configured default appointment type. Never ask for or expose an internal service ID. When the caller asks about an exact time, include requestedStartAt as an ISO datetime. Results are verified, privacy-safe, and sorted earliest first. Speak displayStart/localStartAt only; startAt is an opaque UTC instant for the booking tool and must never be read as a local clock time.",
+    description: "Find real clinic-calendar appointment slots. Always supply dateExpression or both rangeStart and rangeEnd, even when requestedStartAt is given. service is an optional patient-facing choice such as Cleaning or Consultation; omit it to use the clinic's configured default appointment type. Never ask for or expose an internal service ID. When the caller asks about an exact time, also include requestedStartAt as an ISO datetime. Results are verified, privacy-safe, and sorted earliest first. Speak displayStart/localStartAt only; startAt is the original UTC instant to pass unchanged to the booking tool.",
     presentation: { title: "Check availability", help: "Reviews services, professionals, and available times. It does not change data.", route: "Scheduling", icon: "⌕", kind: "consult" },
     inputSchema: {
       type: "object",
@@ -31,7 +31,7 @@ export const AGENT_TOOL_DEFINITIONS: AgentToolDefinition[] = [
       properties: {
         service: { type: "string", minLength: 1, description: "Optional patient-facing service choice, for example Cleaning or Consultation." },
         employeeId: { type: "string", minLength: 1, description: "Optional opaque professional reference supplied by verified business or availability data. Copy it unchanged; never invent or speak it." },
-        dateExpression: { type: "string", minLength: 1, description: "A supported natural date phrase from the caller." },
+        dateExpression: { type: "string", minLength: 1, description: "Use YYYY-MM-DD for an explicit calendar date. Otherwise use only: today, tomorrow, this week, next week, or an English weekday optionally prefixed with this/next. Do not include a time or a spelled-out month. Use either dateExpression or rangeStart/rangeEnd, never both." },
         rangeStart: { type: "string", format: "date-time" },
         rangeEnd: { type: "string", format: "date-time" },
         requestedStartAt: { type: "string", format: "date-time", description: "Optional exact appointment time. Copy a returned slot's startAt unchanged whenever possible. If constructing from a caller saying 3 PM, send 2026-09-02T15:00 without Z; never label a local clock time as UTC." },

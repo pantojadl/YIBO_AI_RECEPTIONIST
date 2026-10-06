@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DISPLAY_CURRENCIES, displayCurrency, formatDisplayMoney, formatStoredMoney } from "../services/money-presentation";
 import { useUnsavedChanges } from "../services/unsaved-changes";
 import { computed, onMounted, ref } from "vue";
 import type { TenantServiceDefinition, ProfessionalDefinition, LocationProfessionalAssignment } from "../../../src/modules/business/index.js";
@@ -11,6 +12,7 @@ const locationId = ref("");
 const configuration = computed(() => state.document?.configuration);
 const location = computed(() => configuration.value?.locations.find(item => item.id === locationId.value));
 type Draft = { kind: "service"; isNew: boolean; value: TenantServiceDefinition }
+  | { kind: "currency"; value: "USD" | "MXN" | "EUR" }
   | { kind: "professional"; isNew: boolean; value: ProfessionalDefinition }
   | { kind: "offering"; serviceId: string; active: boolean; amount: string; currency: string }
   | { kind: "assignment"; value: LocationProfessionalAssignment };
@@ -32,7 +34,7 @@ function openProfessional(value?: ProfessionalDefinition) {
 function openOffering(serviceId: string) {
   const existing = location.value?.services.find(item => item.serviceId === serviceId);
   state.saved = false;
-  draft.value = { kind: "offering", serviceId, active: existing?.active ?? true, amount: existing ? priceText(existing.price) : "0.00", currency: existing?.price.currency ?? (state.document?.region === "MX" ? "MXN" : "USD") };
+  draft.value = { kind: "offering", serviceId, active: existing?.active ?? true, amount: existing ? priceText(existing.price) : "0.00", currency: existing?.price.currency ?? displayCurrency(configuration.value) };
 }
 function openAssignment(professionalId: string) {
   state.saved = false;
@@ -44,6 +46,7 @@ async function save() {
   const success = form.kind === "service" ? await editor.saveService(form.value, form.isNew)
     : form.kind === "professional" ? await editor.saveProfessional(form.value, form.isNew)
     : form.kind === "offering" ? await editor.saveOffering(locationId.value, form.serviceId, form.active, form.amount, form.currency)
+    : form.kind === "currency" ? await editor.saveDisplayCurrency(form.value)
     : await editor.saveAssignment(locationId.value, form.value);
   if (success) { draft.value = undefined; emit("saved"); }
 }
@@ -62,10 +65,11 @@ onMounted(load);
       <fieldset :disabled="state.busy || Boolean(draft) || state.conflict">
         <legend>Catalogs · version {{ state.document?.version }}</legend>
         <label>Location for offerings and schedules<select v-model="locationId"><option v-for="item in configuration.locations" :key="item.id" :value="item.id">{{ item.name }}{{ item.active ? '' : ' (inactive)' }}</option></select></label>
+        <p>Default display currency: {{ displayCurrency(configuration) }} <button type="button" @click="draft = { kind: 'currency', value: displayCurrency(configuration) }">Edit currency</button></p>
         <h3>Services</h3><button type="button" @click="openService()">Add service</button>
         <ul class="entries"><li v-for="service in configuration.services" :key="service.id">
           <div><strong>{{ service.name }}</strong> · {{ service.active ? 'Active' : 'Inactive' }}<p>{{ service.description }}</p><small>{{ service.durationMinutes }} minutes + {{ service.bufferMinutes }} buffer minutes</small>
-            <p v-if="location?.services.find(item => item.serviceId === service.id)" class="price">{{ location?.services.find(item => item.serviceId === service.id)?.active ? 'Offered' : 'Not offered' }} at {{ location?.name }} · {{ priceText(location!.services.find(item => item.serviceId === service.id)!.price) }} {{ location?.services.find(item => item.serviceId === service.id)?.price.currency }}</p>
+            <p v-if="location?.services.find(item => item.serviceId === service.id)" class="price">{{ location?.services.find(item => item.serviceId === service.id)?.active ? 'Offered' : 'Not offered' }} at {{ location?.name }} · {{ formatStoredMoney(location!.services.find(item => item.serviceId === service.id)!.price, configuration) }}</p>
             <p v-else>Not assigned to {{ location?.name ?? 'a location' }}</p>
           </div>
           <div class="actions"><button type="button" @click="openService(service)">Edit service</button><button type="button" :disabled="!location" @click="openOffering(service.id)">Location offering & price</button></div>
@@ -80,7 +84,7 @@ onMounted(load);
       </fieldset>
       <form v-if="draft" @submit.prevent="save">
         <fieldset :disabled="state.busy">
-          <legend>{{ draft.kind === 'service' ? 'Service details' : draft.kind === 'professional' ? 'Professional details' : `Assignment at ${location?.name}` }}</legend>
+          <legend>{{ draft.kind === 'service' ? 'Service details' : draft.kind === 'professional' ? 'Professional details' : draft.kind === 'currency' ? 'Display currency' : `Assignment at ${location?.name}` }}</legend>
           <template v-if="draft.kind === 'service'">
             <label>Name<input v-model="draft.value.name" maxlength="120" required></label>
             <label>Description<textarea v-model="draft.value.description" maxlength="1000" rows="3"></textarea></label>
@@ -98,6 +102,11 @@ onMounted(load);
             <label class="check"><input v-model="draft.active" type="checkbox">Offer this service at {{ location?.name }}</label>
             <div class="fields"><label>Price<input v-model="draft.amount" inputmode="decimal" required placeholder="125.50"></label><label>Currency (USD, MXN…)<input v-model="draft.currency" maxlength="3" required></label></div>
             <p>Price is informational; no payment is collected. A location’s default service must stay active. Change its default under Locations before disabling that offering.</p>
+          </template>
+          <template v-else-if="draft.kind === 'currency'">
+            <label>Default display currency<select v-model="draft.value"><option v-for="currency in DISPLAY_CURRENCIES" :key="currency" :value="currency">{{ currency }}</option></select></label>
+            <p>Preview: {{ formatDisplayMoney(12550, { displayCurrency: draft.value }) }}</p>
+            <p>Used for new prices and amounts without a recorded currency. Existing service prices, booked prices and provider billing retain their recorded currency. No exchange-rate conversion.</p>
           </template>
           <template v-else>
             <h3>{{ configuration.professionals.find(item => item.id === (draft?.kind === 'assignment' ? draft.value.professionalId : ''))?.displayName }}</h3>

@@ -6,7 +6,7 @@ do not authorize changing a running deployment.
 
 ## Ownership and automatic writes
 
-`src/infrastructure/database/regional-database.ts` registers migrations 1–10.
+`src/infrastructure/database/regional-database.ts` registers migrations 1–11.
 `migrateDatabase` uses a write transaction and `schema_migrations`; already-applied
 versions are skipped. `openRegionalDatabase` enables foreign keys, a five-second
 busy timeout and WAL. Configured API/Voice Lab startup migrates and seeds the chosen
@@ -15,6 +15,10 @@ DID mappings. Agent startup also upgrades saved configuration and compatible too
 Treat starting new code against existing data as a write operation.
 
 ## Backup before migration
+
+The [Checkpoint 6 backup CLI and templates](DEPLOYMENT_CHECKPOINT.md) implement
+consistent online snapshots and restore into new directories. Their synthetic
+rehearsal is complete; the target host and actual off-host restore remain open.
 
 1. Record the exact Git commit, database paths, region/tenant selection and migration
    versions. Resolve paths from the actual process environment, not an assumed cwd.
@@ -38,7 +42,7 @@ Treat starting new code against existing data as a write operation.
    the command environment. `db:init` does not load `.env`; a single missing override
    could target a default database. Verify both resolved paths before running it.
 3. Run `pnpm db:init` against those copies, then run it again to check idempotency.
-   Never point this rehearsal at original DBs. Inspect versions 1–9 and integrity/
+   Never point this rehearsal at original DBs. Inspect versions 1–11 and integrity/
    foreign-key checks after both runs.
 4. Compare counts and invariants, explaining intentional seed additions. Check
    tenant isolation, default-location backfill, configuration versions, appointment
@@ -46,7 +50,8 @@ Treat starting new code against existing data as a write operation.
    alone does not prove preservation. Opening agent configuration may upgrade JSON;
    include that read path in the rehearsal. For migration 10, also verify customer
    metadata defaults, appointment outcomes, appointment events and notification
-   deliveries.
+   deliveries. For migration 11, verify appointment revisions and preserve operation
+   claims; reconcile them explicitly rather than clearing them during restore.
 5. Run relevant SQLite tests, both typechecks, full tests and production build for
    REL-001. Keep a report containing counts/checksums/results, not raw customer rows.
    Verify calendar integration on isolated test resources only.

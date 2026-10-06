@@ -16,7 +16,12 @@ export type AppointmentStatus =
   | "CANCELLED"
   | "FAILED";
 
+/** Local marker written before a provider call. OUTCOME_UNKNOWN is not a success receipt. */
+export type AppointmentOperationIntent = "CANCELLING" | "RESCHEDULING" | "OUTCOME_UNKNOWN";
+
 export interface Appointment {
+  /** Persisted edit revision. Older/custom repository records start at 1. */
+  version?: number;
   id: AppointmentId;
   tenantId: TenantId;
   locationId: LocationId;
@@ -34,6 +39,18 @@ export interface Appointment {
   sourceCallId?: CallId;
   externalCalendarEventId?: string;
   outcomeStatus?: "COMPLETED" | "NO_SHOW";
+  /** Last local write. Missing values are treated as already stale by recovery. */
+  updatedAt?: ISODateTime;
+  /** A calendar cancel was required and did not succeed. Recovery must finish it. */
+  compensationRequired?: boolean;
+  /** Set before the provider call so a crash cannot look like a plain confirmed booking. */
+  operationIntent?: AppointmentOperationIntent;
+  intentKey?: IdempotencyKey;
+  intentFingerprint?: string;
+  /** Calendar etag observed when the intent was written. Later writes use this value and do not read a newer one. */
+  intentEtag?: string;
+  /** Fence held by the writer that last committed this row. Stored for the lock check, not returned on reads. */
+  writeFence?: number;
 }
 
 export interface AppointmentEvent {
