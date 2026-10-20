@@ -1,0 +1,25 @@
+# $0 local demo. Does not buy a number, call OpenAI, or expose ARI.
+# Pilot secrets stay in an untracked .env. See docs/launch/DEPLOYMENT.md.
+services:
+  yibo:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - yibo-data:/var/lib/yibo
+    environment:
+      HOST: 0.0.0.0
+      YIBO_RUNTIME: in-memory
+      YIBO_REGION: US
+      YIBO_TENANT_ID: tenant-yibo-demo-us
+      YIBO_DATABASE_US: /var/lib/yibo/yibo-us.sqlite
+      YIBO_INSTANCE_LOCK: "1"
+      YIBO_INSTANCE_LOCK_PATH: /var/lib/yibo/yibo-instance.lock
+      YIBO_CALL_RECORDING: "off"
+      YIBO_OUTBOUND_DIALING: disabled
+      YIBO_EXTERNAL_TRANSFER: disabled
+      YIBO_DASHBOARD_ORIGIN: http://127.0.0.1:3000
+    restart: unless-stopped
+
+volumes:
+  yibo-data:

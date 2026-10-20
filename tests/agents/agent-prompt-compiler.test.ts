@@ -42,6 +42,9 @@ describe("AgentPromptCompiler", () => {
     expect(prompt).toContain("Backend confirmation is required for: create_appointment, cancel_appointment");
     expect(prompt).toContain("Retry only after a new caller turn, with identical action arguments and that token");
     expect(prompt).toContain("Never claim a mutation succeeded until its tool returns success");
+    expect(prompt).toContain("automated AI assistant");
+    expect(prompt).toContain("Calls are not recorded");
+    expect(prompt).toContain("Do not give medical, legal, financial, or emergency advice");
   });
 
   it("does not advertise authority for disabled capabilities", () => {
@@ -60,5 +63,7 @@ describe("AgentPromptCompiler", () => {
     expect(prompt).toContain("Do not claim that you can create appointments");
     expect(prompt).toContain("Do not claim that you can transfer the call");
     expect(prompt).toContain("No additional backend confirmation gate is active");
+    expect(prompt).toContain("identify yourself as an automated AI assistant");
+    expect(prompt).toContain("Wait for the caller to speak before giving the first response");
   });
 });

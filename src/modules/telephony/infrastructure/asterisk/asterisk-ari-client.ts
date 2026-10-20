@@ -86,7 +86,11 @@ export class AsteriskAriClient implements ConnectableAsteriskClient, AsteriskMed
     catch (error) { if (!isNotFound(error)) throw error; }
   }
   async transfer(channelId: string, target: { kind: "phone" | "extension"; value: string }): Promise<void> {
-    const endpoint = target.kind === "phone" ? `PJSIP/${target.value}` : `Local/${target.value}`;
+    // Phone targets go to a dialplan context that hangs up until a trunk is enabled.
+    // PJSIP/<number> is not a carrier route and must not be dialed from this process.
+    const endpoint = target.kind === "phone"
+      ? `Local/${target.value.replace(/\D/g, "")}@yibo-outbound-transfer`
+      : `Local/${target.value}@yibo-internal`;
     await this.request(`/ari/channels/${encodeURIComponent(channelId)}/redirect?endpoint=${encodeURIComponent(endpoint)}`, { method: "POST" });
   }
 

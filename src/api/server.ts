@@ -14,10 +14,12 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { registerGoogleCalendarRoutes } from "./routes/google-calendar.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerReadinessRoutes } from "./routes/readiness.js";
+import { registerDemoRoutes } from "./routes/demo.js";
 
 export async function createApiServer(app: YiboApplication): Promise<FastifyInstance> {
   const server = Fastify({ logger: false });
   await registerHealthRoutes(server);
+  await registerDemoRoutes(server);
   await registerAuthRoutes(server, app);
   await registerReadinessRoutes(server, app);
   await registerAgentConfigurationRoutes(server, app);

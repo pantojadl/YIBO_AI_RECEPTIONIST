@@ -16,10 +16,10 @@ class FakeAsteriskClient implements AsteriskClient {
   async emit(event: AsteriskEvent): Promise<void> { await this.handler?.(event); }
 }
 
-function fixture() {
+function fixture(options?: { allowExternalTransfer?: boolean; calledNumberRegion?: string }) {
   const client = new FakeAsteriskClient();
   let nextId = 1;
-  const gateway = new AsteriskTelephonyGateway(client, () => `call-${nextId++}`);
+  const gateway = new AsteriskTelephonyGateway(client, () => `call-${nextId++}`, undefined, options);
   const events: TelephonyEvent[] = [];
   gateway.onEvent(async (event) => { events.push(event); });
   return { client, events, gateway };
@@ -57,18 +57,40 @@ describe("AsteriskTelephonyGateway", () => {
     expect(client.hangup).toHaveBeenCalledWith("asterisk-channel-99");
   });
 
-  it("normalizes an allow-listed destination type before transfer", async () => {
+  it("refuses an external phone transfer unless the operator enables it", async () => {
     const { client, gateway } = fixture();
     await client.emit(incoming);
 
-    await expect(gateway.transfer("call-1", {
+    const blocked = await gateway.transfer("call-1", {
+      type: "PHONE_NUMBER",
+      value: "+52 (55) 1234-5678",
+    });
+    expect(blocked).toMatchObject({ ok: false, error: { code: "INVALID_DESTINATION" } });
+    expect(client.transfer).not.toHaveBeenCalled();
+
+    const allowed = fixture({ allowExternalTransfer: true });
+    await allowed.client.emit(incoming);
+    await expect(allowed.gateway.transfer("call-1", {
       type: "PHONE_NUMBER",
       value: "+52 (55) 1234-5678",
     })).resolves.toEqual({ ok: true, value: undefined });
-    expect(client.transfer).toHaveBeenCalledWith("asterisk-channel-99", {
+    expect(allowed.client.transfer).toHaveBeenCalledWith("asterisk-channel-99", {
       kind: "phone",
       value: "+525512345678",
     });
+  });
+
+  it("ignores a duplicate Stasis entry for the same channel", async () => {
+    const { client, events } = fixture();
+    await client.emit(incoming);
+    await client.emit(incoming);
+    expect(events).toHaveLength(1);
+  });
+
+  it("canonicalizes a 10-digit US called number before tenant lookup", async () => {
+    const { client, events } = fixture({ calledNumberRegion: "US" });
+    await client.emit({ ...incoming, dialedNumber: "(512) 555-0100" });
+    expect(events[0]).toMatchObject({ type: "INCOMING_CALL", to: "+15125550100" });
   });
 
   it("rejects invalid destinations before calling Asterisk", async () => {

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YIBO demo — simulation only</title>
+  <style>
+    :root { color-scheme: light; font-family: Georgia, "Iowan Old Style", serif; }
+    body { margin: 0; background: #f4f1ea; color: #1c1915; }
+    main { max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    h1 { font-size: 2rem; line-height: 1.15; margin-bottom: 0.4rem; }
+    .badge { display: inline-block; background: #1c1915; color: #f4f1ea; padding: 0.2rem 0.55rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.78rem; letter-spacing: 0.04em; }
+    p, li { line-height: 1.5; }
+    .warn { background: #fff8e8; border: 1px solid #e2d2a4; padding: 0.8rem 1rem; }
+    button, textarea { font: inherit; }
+    button { background: #1c1915; color: #f4f1ea; border: 0; padding: 0.45rem 0.7rem; cursor: pointer; }
+    button.ghost { background: transparent; color: #1c1915; border: 1px solid #1c1915; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 4.5rem; }
+    .log { display: flex; flex-direction: column; gap: 0.6rem; margin: 1rem 0; }
+    .bubble { padding: 0.7rem 0.85rem; background: white; border: 1px solid #ddd6c8; }
+    .bubble.caller { background: #e7efe8; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 1rem; }
+    a { color: #1c1915; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="badge">DEMO READY — SIMULATION</p>
+    <h1>YIBO answers inbound calls for a small business.</h1>
+    <p>This page is a scripted sandbox. It is not a live phone line, not a recording of a real call, and not connected to a carrier or a paid AI model.</p>
+    <div class="warn">
+      <p><strong>What is true today:</strong> inbound calls only, the assistant says it is an AI, calls are not recorded, and YIBO is not a HIPAA product. Healthcare businesses are out of scope. There is no public US phone number until the owner buys one.</p>
+    </div>
+    <h2>Try a simulated call</h2>
+    <p>Pretend you called a barbershop. Nothing you type is stored on the server.</p>
+    <div id="log" class="log" aria-live="polite"></div>
+    <div class="row">
+      <button type="button" class="ghost" data-utterance="What are your hours?">Hours</button>
+      <button type="button" class="ghost" data-utterance="I'd like a haircut tomorrow at 3.">Book</button>
+      <button type="button" class="ghost" data-utterance="Can I talk to a person?">Person</button>
+      <button type="button" class="ghost" data-utterance="Are you recording this?">Recording</button>
+      <button type="button" class="ghost" data-utterance="Is this HIPAA compliant?">HIPAA</button>
+      <button type="button" class="ghost" data-utterance="This is an emergency.">Emergency</button>
+    </div>
+    <form id="composer">
+      <label for="utterance">What you would say</label>
+      <textarea id="utterance" name="utterance" required></textarea>
+      <p><button type="submit">Send</button></p>
+    </form>
+    <h2>Request a pilot</h2>
+    <p id="pilot">Pilot requests are not collected on this server. Use the contact method the operator gave you. Do not send payment details or health information.</p>
+    <h2>Status</h2>
+    <ul>
+      <li>Demo: ready, as a simulation.</li>
+      <li>Pilot: not ready. Needs a purchased US number, a capped model key, and a host.</li>
+      <li>General availability: not claimed.</li>
+    </ul>
+  </main>
+  <script>
+    const log = document.querySelector("#log");
+    const opening = "Hi, you've reached the demo barbershop. I'm an automated AI assistant, not a person. This call is not being recorded. How can I help?";
+    say("assistant", opening);
+
+    document.querySelectorAll("[data-utterance]").forEach((button) => {
+      button.addEventListener("click", () => reply(button.getAttribute("data-utterance")));
+    });
+    document.querySelector("#composer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const field = document.querySelector("#utterance");
+      reply(field.value);
+      field.value = "";
+    });
+
+    function reply(text) {
+      const utterance = String(text || "").trim();
+      if (!utterance) return;
+      say("caller", utterance);
+      say("assistant", answer(utterance.toLowerCase()));
+    }
+
+    function answer(text) {
+      if (text.includes("emergency") || text.includes("911") || text.includes("chest")) {
+        return "I'm an automated assistant and I can't help with emergencies. Please contact local emergency services now. I won't book an appointment in place of that.";
+      }
+      if (text.includes("hipaa") || text.includes("medical") || text.includes("patient")) {
+        return "YIBO is not a HIPAA product and this demo is not a clinic. We don't take healthcare businesses or health details.";
+      }
+      if (text.includes("record")) {
+        return "This call is not being recorded. Recording is off unless an operator later turns it on with a proper notice, which this demo does not do.";
+      }
+      if (text.includes("person") || text.includes("human") || text.includes("someone")) {
+        return "I can pass you to a person when that extension is configured. In this simulation nobody is actually rung, and I won't dial an outside number.";
+      }
+      if (text.includes("hour")) {
+        return "The simulated shop is open weekdays from 9 to 6. That's sample copy, not a live calendar.";
+      }
+      if (text.includes("price") || text.includes("cost") || text.includes("card")) {
+        return "I don't take card numbers. Prices come from the business catalog, and this sandbox doesn't have one. Nothing was charged.";
+      }
+      if (text.includes("book") || text.includes("haircut") || text.includes("appointment") || text.includes("3")) {
+        return "I can't confirm 3 o'clock from this page. A real booking would check the calendar first and would only be confirmed after that check succeeds. Nothing was saved.";
+      }
+      return "I'm an automated AI assistant for inbound questions and appointments. I didn't take an action just now. Ask about hours, a haircut, a person, recording, or an emergency.";
+    }
+
+    function say(role, text) {
+      const item = document.createElement("div");
+      item.className = "bubble" + (role === "caller" ? " caller" : "");
+      item.textContent = (role === "caller" ? "You: " : "YIBO: ") + text;
+      log.appendChild(item);
+    }
+  </script>
+</body>
+</html>

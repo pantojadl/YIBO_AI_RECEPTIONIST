@@ -21,6 +21,7 @@ export class ConfigurationError extends Error {
 }
 
 export function loadConfiguration(environment: NodeJS.ProcessEnv = process.env): ApplicationConfiguration {
+  assertLaunchSafety(environment);
   const runtime = environment.YIBO_RUNTIME?.trim() || "in-memory";
   if (runtime !== "openai-realtime" && runtime !== "in-memory") {
     throw new ConfigurationError("YIBO_RUNTIME must be openai-realtime or in-memory");
@@ -56,6 +57,19 @@ export function loadConfiguration(environment: NodeJS.ProcessEnv = process.env):
     ...(vadPrefixPaddingMs === undefined ? {} : { vadPrefixPaddingMs }),
     ...(vadSilenceDurationMs === undefined ? {} : { vadSilenceDurationMs }),
   };
+}
+
+const disabledValues = new Set(["", "0", "false", "off", "disabled", "no"]);
+
+function assertLaunchSafety(environment: NodeJS.ProcessEnv): void {
+  const recording = environment.YIBO_CALL_RECORDING?.trim().toLowerCase() ?? "";
+  if (!disabledValues.has(recording)) {
+    throw new ConfigurationError("YIBO_CALL_RECORDING must stay off. This build does not record calls.");
+  }
+  const outbound = environment.YIBO_OUTBOUND_DIALING?.trim().toLowerCase() ?? "";
+  if (!disabledValues.has(outbound)) {
+    throw new ConfigurationError("YIBO_OUTBOUND_DIALING is not supported. YIBO is inbound-only.");
+  }
 }
 
 function validOrigin(value: string): string {

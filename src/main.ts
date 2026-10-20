@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { buildConfiguredApplication } from "./bootstrap/build-configured-application.js";
+import { acquireInstanceLock } from "./bootstrap/instance-lock.js";
 import { createApiServer } from "./api/index.js";
+
+const releaseInstanceLock = process.env.YIBO_INSTANCE_LOCK === "1"
+  ? acquireInstanceLock(process.env.YIBO_INSTANCE_LOCK_PATH?.trim() || "data/yibo-instance.lock")
+  : undefined;
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST?.trim() || "127.0.0.1";
@@ -21,6 +26,7 @@ const shutdown = async () => {
   stopping = true;
   await application.telephony.close?.();
   await server.close();
+  releaseInstanceLock?.();
 };
 process.once("SIGINT", () => { void shutdown(); });
 process.once("SIGTERM", () => { void shutdown(); });

@@ -6,15 +6,28 @@ import type {
   TelephonyGateway,
   TransferDestination,
 } from "../../application/contracts.js";
+import { canonicalizeCalledNumber } from "./called-number.js";
 import { AsteriskCallRegistry } from "./asterisk-call-registry.js";
 import type { AsteriskClient, AsteriskEvent, AsteriskFailure } from "./asterisk-client.js";
+
+export interface AsteriskTelephonyOptions {
+  /** External phone transfers place a billable outbound leg. Off unless explicitly enabled. */
+  allowExternalTransfer?: boolean;
+  /** When US, 10-digit and 11-digit NANP called numbers become +1 E.164 before tenant lookup. */
+  calledNumberRegion?: string;
+}
 
 export class AsteriskTelephonyGateway implements TelephonyGateway {
   private readonly handlers: Array<(event: TelephonyEvent) => Promise<void>> = [];
   private readonly calls: AsteriskCallRegistry;
   private readonly activeCalls = new Set<string>();
 
-  constructor(client: AsteriskClient, createCallId: () => CallId, private readonly media?: { prepare(callId: string, channelId: string): Promise<void>; cleanup(callId: string): Promise<void> }) {
+  constructor(
+    client: AsteriskClient,
+    createCallId: () => CallId,
+    private readonly media?: { prepare(callId: string, channelId: string): Promise<void>; cleanup(callId: string): Promise<void> },
+    private readonly options: AsteriskTelephonyOptions = {},
+  ) {
     this.client = client;
     this.calls = new AsteriskCallRegistry(createCallId);
     client.onEvent((event) => this.handleAsteriskEvent(event));
@@ -47,6 +60,12 @@ export class AsteriskTelephonyGateway implements TelephonyGateway {
   }
 
   async transfer(callId: CallId, destination: TransferDestination) {
+    if (destination.type === "PHONE_NUMBER" && !this.options.allowExternalTransfer) {
+      return failure<TelephonyError>({
+        code: "INVALID_DESTINATION",
+        message: "External phone transfers are disabled. This pilot allows internal extensions only.",
+      });
+    }
     const normalized = normalizeDestination(destination);
     if (!normalized) {
       return failure<TelephonyError>({
@@ -72,13 +91,14 @@ export class AsteriskTelephonyGateway implements TelephonyGateway {
 
   private async handleAsteriskEvent(event: AsteriskEvent): Promise<void> {
     if (event.type === "CHANNEL_ENTERED_APPLICATION") {
+      if (this.calls.callIdForChannel(event.channelId)) return;
       const callId = this.calls.register(event.channelId);
       this.activeCalls.add(callId);
       return this.emit({
         type: "INCOMING_CALL",
         callId,
         from: event.callerNumber,
-        to: event.dialedNumber,
+        to: canonicalizeCalledNumber(event.dialedNumber, this.options.calledNumberRegion),
         occurredAt: normalizedTimestamp(event.occurredAt),
       });
     }

@@ -13,6 +13,12 @@ export function buildAsteriskIntegration(environment: NodeJS.ProcessEnv) {
   const end = Number(environment.YIBO_ASTERISK_MEDIA_PORT_END);
   const client = new AsteriskAriClient({baseUrl:values[0]!,application:values[1]!,username:values[2]!,password:values[3]!});
   const voice = new AsteriskRtpVoiceMediaGateway(client,{host,portStart:start,portEnd:end});
-  const telephony = new AsteriskTelephonyGateway(client,()=>`call-${randomUUID()}`,voice);
+  const allowExternalTransfer = ["1", "true", "enabled"].includes(
+    (environment.YIBO_EXTERNAL_TRANSFER ?? "").trim().toLowerCase(),
+  );
+  const telephony = new AsteriskTelephonyGateway(client,()=>`call-${randomUUID()}`,voice,{
+    allowExternalTransfer,
+    calledNumberRegion: environment.YIBO_REGION?.trim(),
+  });
   return {client,voice,telephony};
 }

@@ -54,6 +54,29 @@ describe("AsteriskAriClient Stasis classification", () => {
 
     expect(events).toEqual([expect.objectContaining({ type: "CHANNEL_ENTERED_APPLICATION", channelId: "caller-1", dialedNumber: "+529991000000" })]);
   });
+
+  it("redirects a phone transfer into the blocked dialplan context", async () => {
+    const original = globalThis.fetch;
+    const fetcher = vi.fn(async (_url: unknown) => new Response(null, { status: 204 }));
+    globalThis.fetch = fetcher as typeof fetch;
+    try {
+      const client = new AsteriskAriClient({
+        baseUrl: "http://127.0.0.1:8088",
+        application: "yibo",
+        username: "test-user",
+        password: "test-password",
+        logger: () => {},
+      });
+      await client.transfer("caller-1", { kind: "phone", value: "+15125550199" });
+      const url = String(fetcher.mock.calls[0]?.[0]);
+      expect(url).toContain("endpoint=Local%2F15125550199%40yibo-outbound-transfer");
+      expect(url).not.toContain("PJSIP");
+      await client.transfer("caller-1", { kind: "extension", value: "204" });
+      expect(String(fetcher.mock.calls[1]?.[0])).toContain("endpoint=Local%2F204%40yibo-internal");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
 
 function deliver(client: AsteriskAriClient, event: Record<string, unknown>): void {

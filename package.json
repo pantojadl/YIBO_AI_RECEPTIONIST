@@ -8,6 +8,10 @@
   },
   "scripts": {
     "db:init": "tsx src/infrastructure/database/init-databases.ts",
+    "db:snapshot": "tsx src/cli/snapshot-database.ts",
+    "cost:model": "tsx src/cli/cost-model.ts",
+    "asterisk:check": "tsx src/cli/validate-asterisk-templates.ts",
+    "asterisk:render": "tsx src/cli/render-asterisk-templates.ts",
     "admin:create": "tsx --env-file=.env src/cli/create-admin.ts",
     "dev": "concurrently -k -n api,dashboard,voice -c cyan,magenta,yellow \"pnpm dev:api\" \"pnpm dev:dashboard\" \"pnpm dev:voice\"",
     "dev:api": "tsx watch src/main.ts",

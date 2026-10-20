@@ -67,6 +67,15 @@ describe("loadConfiguration", () => {
       .toThrowError(new ConfigurationError("OPENAI_API_KEY is required when YIBO_RUNTIME=openai-realtime"));
   });
 
+  it("rejects call recording and outbound dialing", () => {
+    expect(() => loadConfiguration({ YIBO_CALL_RECORDING: "on" }))
+      .toThrowError(/YIBO_CALL_RECORDING must stay off/);
+    expect(() => loadConfiguration({ YIBO_OUTBOUND_DIALING: "enabled" }))
+      .toThrowError(/YIBO_OUTBOUND_DIALING is not supported/);
+    expect(loadConfiguration({ YIBO_CALL_RECORDING: "off", YIBO_OUTBOUND_DIALING: "disabled" }).runtime)
+      .toBe("in-memory");
+  });
+
   it("rejects unknown runtime names", () => {
     expect(() => loadConfiguration({ YIBO_RUNTIME: "other" }))
       .toThrowError(new ConfigurationError("YIBO_RUNTIME must be openai-realtime or in-memory"));
